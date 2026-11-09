@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 namespace OpenShell;
 
 /// <summary>One page of results.</summary>
+/// <param name="Items">The items on this page.</param>
+/// <param name="NextPageToken">The token of the next page; null or empty on the last page.</param>
 public sealed record Page<T>(IReadOnlyList<T> Items, string? NextPageToken)
 {
     /// <summary>True when another page follows.</summary>

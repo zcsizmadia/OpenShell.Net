@@ -83,15 +83,19 @@ public abstract record SettingValue
 }
 
 /// <summary>A string setting.</summary>
+/// <param name="Value">The value.</param>
 public sealed record StringSetting(string Value) : SettingValue;
 
 /// <summary>A boolean setting.</summary>
+/// <param name="Value">The value.</param>
 public sealed record BoolSetting(bool Value) : SettingValue;
 
 /// <summary>A 64-bit integer setting.</summary>
+/// <param name="Value">The value.</param>
 public sealed record IntSetting(long Value) : SettingValue;
 
 /// <summary>A byte-array setting, compared by content.</summary>
+/// <param name="Value">The value.</param>
 public sealed record BytesSetting(byte[] Value) : SettingValue
 {
     /// <inheritdoc />
@@ -108,6 +112,8 @@ public sealed record BytesSetting(byte[] Value) : SettingValue
 
 /// <summary>A setting value paired with the scope it resolved from.</summary>
 /// <remarks><see cref="Value"/> is null for a registered key that has no configured value.</remarks>
+/// <param name="Value">The effective value; null for a registered key that has no configured value.</param>
+/// <param name="Scope">The scope the value resolved from.</param>
 public sealed record EffectiveSetting(SettingValue? Value, SettingScope Scope);
 
 /// <summary>The effective configuration of a sandbox.</summary>

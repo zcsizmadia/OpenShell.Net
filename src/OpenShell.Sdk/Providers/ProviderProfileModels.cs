@@ -57,9 +57,15 @@ public enum CredentialTokenGrantType
 }
 
 /// <summary>One input a refresh strategy needs.</summary>
+/// <param name="Name">The material name.</param>
+/// <param name="Description">What the material is.</param>
+/// <param name="Required">True when the strategy cannot run without it.</param>
+/// <param name="Secret">True when the material is stored as a secret.</param>
 public sealed record ProfileCredentialRefreshMaterial(string Name, string Description = "", bool Required = false, bool Secret = false);
 
 /// <summary>Maps a minted output to a sibling credential.</summary>
+/// <param name="Output">The strategy-defined output id, for example <c>session_token</c>.</param>
+/// <param name="Credential">The sibling credential whose environment variables receive the output.</param>
 public sealed record ProfileCredentialRefreshOutput(string Output, string Credential);
 
 /// <summary>How a profile credential is refreshed.</summary>
@@ -88,9 +94,17 @@ public sealed record ProfileCredentialRefresh
 }
 
 /// <summary>Endpoint-specific audience override for a token grant.</summary>
+/// <param name="Host">The endpoint host to match; empty inherits the profile endpoint host.</param>
+/// <param name="Port">The endpoint port to match; zero matches the profile endpoint port.</param>
+/// <param name="Path">The endpoint path to match; empty inherits the profile endpoint path.</param>
+/// <param name="Audience">The resource audience to request for matching endpoints.</param>
+/// <param name="Scopes">The OAuth2 scopes to request; empty inherits the token grant scopes.</param>
 public sealed record TokenGrantAudienceOverride(string Host, uint Port, string Path, string Audience, IReadOnlyList<string> Scopes);
 
 /// <summary>Subject token for a token-exchange grant.</summary>
+/// <param name="Source">Where the subject token comes from, for example <c>provider_credential</c>.</param>
+/// <param name="Credential">The provider credential key that stores the subject token.</param>
+/// <param name="SubjectTokenType">The OAuth2 <c>subject_token_type</c>; empty uses <c>urn:ietf:params:oauth:token-type:access_token</c>.</param>
 public sealed record TokenGrantSubjectToken(string Source, string Credential, string SubjectTokenType = "");
 
 /// <summary>Dynamic credential acquisition through an OAuth2 grant.</summary>
@@ -173,6 +187,9 @@ public sealed record ProfileCredential
 }
 
 /// <summary>EXPERIMENTAL: non-secret content served at a virtual sandbox path. May change or be removed.</summary>
+/// <param name="Path">The virtual file name below <c>/run/openshell/providers/&lt;provider&gt;/</c>.</param>
+/// <param name="Content">A UTF-8 template; only <c>{{config.KEY}}</c> references are supported.</param>
+/// <param name="EnvVar">An optional environment variable that receives the absolute virtual path.</param>
 public sealed record ProfileFile(string Path, string Content, string EnvVar = "");
 
 /// <summary>A provider type profile.</summary>
@@ -222,15 +239,28 @@ public sealed record ProviderProfile
 }
 
 /// <summary>A profile submitted for import, update or lint, with optional source metadata for diagnostics.</summary>
+/// <param name="Profile">The profile.</param>
+/// <param name="Source">Where the profile came from, for example a file name; echoed in diagnostics.</param>
 public sealed record ProfileImportItem(ProviderProfile Profile, string Source = "");
 
 /// <summary>A validation finding from import, update or lint.</summary>
+/// <param name="Source">The <see cref="ProfileImportItem.Source"/> of the profile.</param>
+/// <param name="ProfileId">The profile id.</param>
+/// <param name="Field">The field the finding is about.</param>
+/// <param name="Message">What is wrong.</param>
+/// <param name="Severity">The severity reported by the gateway.</param>
 public sealed record ProfileDiagnostic(string Source, string ProfileId, string Field, string Message, string Severity);
 
 /// <summary>Result of importing profiles.</summary>
+/// <param name="Diagnostics">The validation findings.</param>
+/// <param name="Profiles">The imported profiles.</param>
+/// <param name="Imported">True when the profiles were imported.</param>
 public sealed record ImportProfilesResult(IReadOnlyList<ProfileDiagnostic> Diagnostics, IReadOnlyList<ProviderProfile> Profiles, bool Imported);
 
 /// <summary>Result of updating a profile.</summary>
+/// <param name="Diagnostics">The validation findings.</param>
+/// <param name="Profile">The updated profile; null when it was not updated.</param>
+/// <param name="Updated">True when the profile was updated.</param>
 public sealed record UpdateProfileResult(IReadOnlyList<ProfileDiagnostic> Diagnostics, ProviderProfile? Profile, bool Updated);
 
 /// <summary>Result of linting profiles.</summary>

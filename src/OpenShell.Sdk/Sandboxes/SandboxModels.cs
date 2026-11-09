@@ -72,6 +72,8 @@ public enum DeletionOutcome
 }
 
 /// <summary>Typed result of a delete. A boolean would hide the pending-cleanup case.</summary>
+/// <param name="Outcome">What the gateway reported about the deletion.</param>
+/// <param name="ResourceId">The id of the deleted resource, when reported; for a sandbox, pass it as <see cref="WaitOptions.ExpectedSandboxId"/>.</param>
 public sealed record DeletionResult(DeletionOutcome Outcome, string? ResourceId = null)
 {
     /// <summary>True when the gateway confirmed the resource is gone.</summary>
@@ -79,9 +81,17 @@ public sealed record DeletionResult(DeletionOutcome Outcome, string? ResourceId 
 }
 
 /// <summary>Registers a loopback HTTP service during sandbox creation.</summary>
+/// <param name="Name">The service name.</param>
+/// <param name="TargetPort">The loopback port inside the sandbox.</param>
+/// <param name="AuthorizationMode">How the gateway treats the Authorization header toward the service.</param>
 public sealed record ServiceExposure(string Name, uint TargetPort, ServiceAuthorizationMode AuthorizationMode = ServiceAuthorizationMode.Unspecified);
 
 /// <summary>One status condition of a sandbox.</summary>
+/// <param name="Type">The condition type, for example <c>Ready</c>.</param>
+/// <param name="Status">The condition status, for example <c>True</c>.</param>
+/// <param name="Reason">A short machine-readable reason.</param>
+/// <param name="Message">A human-readable message.</param>
+/// <param name="TransitionTime">When the condition last changed, when reported.</param>
 public sealed record SandboxCondition(string Type, string Status, string Reason, string Message, DateTimeOffset? TransitionTime);
 
 /// <summary>Per-sandbox workload template fields.</summary>
@@ -141,7 +151,7 @@ public sealed record SandboxSpec
 
     /// <summary>
     /// Create-time safety boundary (filesystem, landlock, process and initial network policy).
-    /// This is the generated wire type; build it directly or through <c>PolicyBuilder</c>.
+    /// This is the generated wire type (<c>Openshell.Sandbox.V1.SandboxPolicy</c>); build it directly, as the SDK has no policy builder.
     /// </summary>
     public SandboxPolicy? Policy { get; init; }
 

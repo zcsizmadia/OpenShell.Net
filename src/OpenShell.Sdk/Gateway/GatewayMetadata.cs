@@ -78,4 +78,7 @@ public sealed record GatewayMetadata
 }
 
 /// <summary>Summary of a registered gateway returned by <see cref="GatewayLocator.List"/>.</summary>
+/// <param name="Name">The gateway name.</param>
+/// <param name="Active">True for the active gateway.</param>
+/// <param name="Source">Where the registration was found.</param>
 public sealed record GatewayEntry(string Name, bool Active, GatewayConfigSource Source);

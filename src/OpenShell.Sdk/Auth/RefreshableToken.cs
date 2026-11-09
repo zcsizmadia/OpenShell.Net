@@ -4,6 +4,8 @@
 namespace OpenShell;
 
 /// <summary>A token with an optional absolute expiry.</summary>
+/// <param name="Value">The bearer token.</param>
+/// <param name="ExpiresAt">When the token expires; null when unknown or it does not expire.</param>
 public sealed record AccessToken(string Value, DateTimeOffset? ExpiresAt = null);
 
 /// <summary>Obtains a fresh <see cref="AccessToken"/>, for example through an OIDC refresh grant.</summary>

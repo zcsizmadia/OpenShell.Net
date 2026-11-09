@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+    SPDX-License-Identifier: Apache-2.0
+
+    The code snippets of the documentation site (docs/). The guides include #region blocks from these files, so every
+    snippet compiles with the repository's analyzers. Snippets that need a real gateway are methods that are compiled
+    but never called; Program.cs runs the ones that work against FakeOpenShellClient. Not part of the solution:
+    scripts/docs.sh builds, checks and runs it.
+  -->
+  <PropertyGroup>
+    <!-- The newest framework the packages ship, as the site's API reference does. -->
+    <TargetFramework>$([System.Text.RegularExpressions.Regex]::Match('$(OpenShellSdkTargetFrameworks)', '[^;]+$').Value)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Snippets</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenShell.Sdk\OpenShell.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\OpenShell.Sdk.DependencyInjection\OpenShell.Sdk.DependencyInjection.csproj" />
+    <ProjectReference Include="..\..\src\OpenShell.Sdk.Testing\OpenShell.Sdk.Testing.csproj" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+</Project>

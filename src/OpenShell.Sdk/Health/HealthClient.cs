@@ -19,12 +19,23 @@ public enum ServiceStatus
 }
 
 /// <summary>Result of a health check.</summary>
+/// <param name="Status">The gateway service status.</param>
+/// <param name="Version">The gateway version.</param>
 public sealed record HealthResult(ServiceStatus Status, string Version);
 
 /// <summary>A compute backend available on the gateway.</summary>
+/// <param name="Name">The driver name the gateway uses for routing and for <c>driver_config</c> keys.</param>
 public sealed record ComputeDriverInfo(string Name);
 
 /// <summary>One successful gateway/extension negotiation.</summary>
+/// <param name="Kind">The extension kind, for example a compute driver or a gateway interceptor.</param>
+/// <param name="ConfiguredName">The registration name chosen by the gateway operator.</param>
+/// <param name="ImplementationName">The implementation identity the extension reported.</param>
+/// <param name="ImplementationVersion">The extension build version, distinct from the protocol version.</param>
+/// <param name="ProtocolMajor">The negotiated protocol major version.</param>
+/// <param name="ProtocolMinor">The negotiated protocol minor version.</param>
+/// <param name="SupportedCapabilities">The optional capabilities the extension supports.</param>
+/// <param name="RequiredCapabilities">The capabilities the extension requires from the gateway.</param>
 public sealed record ExtensionInfo(
     string Kind,
     string ConfiguredName,
@@ -36,6 +47,10 @@ public sealed record ExtensionInfo(
     IReadOnlyList<string> RequiredCapabilities);
 
 /// <summary>Operational metadata about the gateway.</summary>
+/// <param name="Status">The gateway service status.</param>
+/// <param name="GatewayVersion">The gateway version.</param>
+/// <param name="ComputeDrivers">The initialized compute drivers.</param>
+/// <param name="Extensions">The extensions negotiated at startup.</param>
 public sealed record GatewayInfo(
     ServiceStatus Status,
     string GatewayVersion,
@@ -43,6 +58,11 @@ public sealed record GatewayInfo(
     IReadOnlyList<ExtensionInfo> Extensions);
 
 /// <summary>The authenticated caller.</summary>
+/// <param name="Subject">The stable identity subject, for example the OIDC <c>sub</c> claim.</param>
+/// <param name="DisplayName">The human-readable name, when the authentication provider supplies one.</param>
+/// <param name="Roles">The roles granted to the identity.</param>
+/// <param name="Scopes">The OAuth2 scopes granted to the identity.</param>
+/// <param name="IdentityProvider">The authentication provider that established the identity.</param>
 public sealed record CurrentUser(
     string Subject,
     string DisplayName,

@@ -6,6 +6,10 @@ using OpenShell.Gateway;
 namespace OpenShell.Oidc;
 
 /// <summary>Tokens returned by an OIDC flow.</summary>
+/// <param name="AccessToken">The access token.</param>
+/// <param name="RefreshToken">The refresh token, when the provider issued one.</param>
+/// <param name="TokenType">The token type, usually <c>Bearer</c>.</param>
+/// <param name="ExpiresAt">When the access token expires; null when the provider did not say.</param>
 public sealed record OidcTokens(string AccessToken, string? RefreshToken = null, string? TokenType = null, DateTimeOffset? ExpiresAt = null)
 {
     /// <summary>Converts to the SDK's <see cref="AccessToken"/> (dropping the refresh token).</summary>
