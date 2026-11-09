@@ -9,8 +9,11 @@
 #   scripts/ci.sh test          run the unit tests on every target framework (after build)
 #   scripts/ci.sh coverage      run the unit tests with coverage on the newest framework (after build)
 #   scripts/ci.sh integration   run the integration tests against OPENSHELL_GATEWAY_ADDRESS (after build)
-#   scripts/ci.sh pack          pack the NuGet packages into artifacts/ (VERSION=x.y.z stamps the version)
+#   scripts/ci.sh pack          pack the NuGet packages into artifacts/
 #   scripts/ci.sh all           format, build, test, coverage, pack
+#
+# Versions (see src/Directory.Build.props): builds default to <UPSTREAM_VERSION>-dev. Set VERSION to the full
+# release version (0.1.7, 0.1.7.1, 0.1.7-preview.1), or VERSION_SUFFIX to replace "dev" (ci.42).
 #
 # Tests run with `dotnet run` per framework rather than `dotnet test`: the TUnit projects are executables,
 # `dotnet test` reports zero tests on some hosts, and a framework that discovers no tests still fails here.
@@ -21,6 +24,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 solution="OpenShell.Sdk.slnx"
 unit_tests=(OpenShell.Sdk.Tests OpenShell.Sdk.DependencyInjection.Tests)
 packages=(OpenShell.Sdk OpenShell.Sdk.DependencyInjection OpenShell.Sdk.Testing)
+
+# Passed to build and pack, so the tested binaries carry the version that ships.
+version_args=()
+if [[ -n "${VERSION:-}" ]]; then
+  version_args=("-p:Version=$VERSION")
+elif [[ -n "${VERSION_SUFFIX:-}" ]]; then
+  version_args=("-p:VersionSuffix=$VERSION_SUFFIX")
+fi
 
 # The framework list lives in Directory.Build.props (OpenShellSdkTargetFrameworks).
 target_frameworks() {
@@ -37,7 +48,7 @@ step_format() {
 
 step_build() {
   echo "== build"
-  dotnet build "$solution" --nologo -c Release
+  dotnet build "$solution" --nologo -c Release ${version_args[@]+"${version_args[@]}"}
 }
 
 step_test() {
@@ -83,12 +94,8 @@ step_integration() {
 }
 
 step_pack() {
-  echo "== pack ${VERSION:-(project default version)}"
+  echo "== pack"
   rm -rf artifacts
-  local version_args=()
-  if [[ -n "${VERSION:-}" ]]; then
-    version_args=("-p:Version=$VERSION")
-  fi
   for project in "${packages[@]}"; do
     dotnet pack "src/$project" --nologo -c Release -o artifacts ${version_args[@]+"${version_args[@]}"}
   done

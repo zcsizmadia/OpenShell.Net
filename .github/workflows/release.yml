@@ -1,7 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 
-# Publishes the packages to nuget.org when a version tag is pushed: v1.2.3, or v1.2.3-beta.1 for a prerelease.
+# Publishes the packages to nuget.org when a version tag is pushed. Versions follow the NVIDIA/OpenShell release
+# in UPSTREAM_VERSION, with a fourth component for SDK-only releases (see src/Directory.Build.props):
+#   v0.1.7            first release built from upstream v0.1.7
+#   v0.1.7.1          SDK-only release on the same upstream protos
+#   v0.1.7-preview.1  prerelease (also v0.1.7.1-preview.1)
+# The tag's first three components must equal UPSTREAM_VERSION.
 #
 # Uses nuget.org Trusted Publishing (no long-lived API key). One-time setup:
 #   1. On nuget.org, add a Trusted Publishing policy: owner zcsizmadia, repository OpenShell.Net,
@@ -50,8 +55,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           version="${TAG#v}"
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH[-prerelease]"
+          if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH[.REVISION][-prerelease]"
+            exit 1
+          fi
+          upstream="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
+          if [[ "${BASH_REMATCH[1]}" != "${upstream#v}" ]]; then
+            echo "::error::Tag $TAG does not match UPSTREAM_VERSION ($upstream). Tag v${upstream#v} or v${upstream#v}.N."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"

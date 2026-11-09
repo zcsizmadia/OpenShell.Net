@@ -5,6 +5,25 @@
   -->
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 
+  <!--
+    Versioning: packages carry the version of the NVIDIA/OpenShell release whose protos they are built from
+    (UPSTREAM_VERSION), plus an optional fourth component for SDK-only releases: 0.1.7, 0.1.7.1, 0.1.7.2, then
+    0.1.8. Release builds pass -p:Version from the tag (the release workflow checks that it matches
+    UPSTREAM_VERSION); every other build is a prerelease of the upstream version, 0.1.7-dev by default or
+    -p:VersionSuffix=ci.42 in CI.
+  -->
+  <PropertyGroup>
+    <OpenShellUpstreamRelease>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../UPSTREAM_VERSION').Trim())</OpenShellUpstreamRelease>
+    <OpenShellUpstreamVersion>$([System.Text.RegularExpressions.Regex]::Match('$(OpenShellUpstreamRelease)', '^v?(\d+\.\d+\.\d+)').Groups[1].Value)</OpenShellUpstreamVersion>
+    <OpenShellUpstreamVersion Condition="'$(OpenShellUpstreamVersion)' == ''">0.0.0</OpenShellUpstreamVersion>
+    <VersionPrefix>$(OpenShellUpstreamVersion)</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">dev</VersionSuffix>
+    <PackageReleaseNotes>Built from the gRPC protos of NVIDIA OpenShell $(OpenShellUpstreamRelease). Release notes: https://github.com/zcsizmadia/OpenShell.Net/releases</PackageReleaseNotes>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="OpenShellUpstreamRelease" Value="$(OpenShellUpstreamRelease)" />
+  </ItemGroup>
+
   <!-- NuGet metadata shared by every package under src/. -->
   <PropertyGroup>
     <Authors>Zoltan Csizmadia</Authors>
