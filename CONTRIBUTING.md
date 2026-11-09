@@ -37,6 +37,18 @@ scripts/sync-upstream.sh v0.1.7    # or to a specific tag or commit
 
 A weekly workflow does this automatically. When upstream publishes a release, it opens a pull request with the synced files and the result of the full check against them.
 
+## Releasing
+
+Pushing a `v*` tag runs the Release workflow (`.github/workflows/release.yml`). An unprivileged job checks, packs (packages and `.snupkg` symbols), smoke-tests and AOT-publishes with the tag's version. A second job in the `nuget` environment, which only `v*` tags can deploy to, then pushes those packages to nuget.org through Trusted Publishing and creates the GitHub release. The version must start with `UPSTREAM_VERSION`: `v0.1.7`, `v0.1.7.1` for an SDK-only release, or `v0.1.7-preview.1`.
+
+To dry-run a release without publishing, run the workflow manually (Actions → Release → Run workflow), optionally with the version to check.
+
+```shell
+git tag v0.1.7 && git push origin v0.1.7
+```
+
+After a release, set `PackageValidationBaselineVersion` in `src/Directory.Build.props` to it, so a breaking public API change fails the build.
+
 ## Mutation testing
 
 [Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) (a local tool in `dotnet-tools.json`, configured in `tests/OpenShell.Sdk.Tests/stryker-config.json`) mutates `OpenShell.Sdk` and reports the changes no test catches. It runs weekly in the "Mutation testing" workflow, which uploads the HTML report; the score is a report, not a gate. To run it locally (about 7 minutes for the whole SDK):

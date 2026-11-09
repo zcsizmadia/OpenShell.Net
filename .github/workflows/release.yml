@@ -1,24 +1,35 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 
-# Publishes the packages to nuget.org when a version tag is pushed. Versions follow the NVIDIA/OpenShell release
-# in UPSTREAM_VERSION, with a fourth component for SDK-only releases (see src/Directory.Build.props):
+# Publishes the packages to nuget.org when a version tag is pushed. Run it manually (Actions > Release > Run workflow)
+# for a dry run: it checks and packs with the version a tag would get, and never publishes.
+#
+# The build job has no secrets and no write access. Only the publish job, in the nuget environment (deployments limited
+# to v* tags), can push to nuget.org, and it pushes exactly the packages the build job produced.
+#
+# Versions follow the NVIDIA/OpenShell release in UPSTREAM_VERSION, with a fourth component for SDK-only releases
+# (see src/Directory.Build.props):
 #   v0.1.7            first release built from upstream v0.1.7
 #   v0.1.7.1          SDK-only release on the same upstream protos
 #   v0.1.7-preview.1  prerelease (also v0.1.7.1-preview.1)
-# The tag's first three components must equal UPSTREAM_VERSION.
+# The version's first three components must equal UPSTREAM_VERSION.
 #
 # Uses nuget.org Trusted Publishing (no long-lived API key). One-time setup:
 #   1. On nuget.org, add a Trusted Publishing policy: owner zcsizmadia, repository OpenShell.Net,
 #      workflow file release.yml, environment nuget.
-#   2. In the GitHub repository, create the environment "nuget" and the repository variable NUGET_USER
-#      set to the nuget.org profile name (not the email address).
+#   2. In the GitHub repository, create the environment "nuget" (deployment policy: tags v*) and the repository
+#      variable NUGET_USER set to the nuget.org profile name (not the email address).
 
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to dry-run, for example 0.1.7.1 (default: UPSTREAM_VERSION). Never published."
+        required: false
 
 permissions:
   contents: read
@@ -28,14 +39,12 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
 
 jobs:
-  publish:
-    name: Publish to nuget.org
+  build:
+    name: Check and pack
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: nuget
-    permissions:
-      contents: write # create the GitHub release
-      id-token: write # nuget.org Trusted Publishing
+    outputs:
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,19 +58,25 @@ jobs:
             10.0.x
             11.0.x
 
-      - name: Version from tag
+      - name: Version
         id: version
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          INPUT: ${{ inputs.version }}
         run: |
-          version="${TAG#v}"
+          upstream="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
+          if [[ -n "$TAG" ]]; then
+            version="${TAG#v}"
+          else
+            version="${INPUT:-$upstream}"
+            version="${version#v}"
+          fi
           if ! [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH[.REVISION][-prerelease]"
+            echo "::error::Version $version is not MAJOR.MINOR.PATCH[.REVISION][-prerelease]"
             exit 1
           fi
-          upstream="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
           if [[ "${BASH_REMATCH[1]}" != "${upstream#v}" ]]; then
-            echo "::error::Tag $TAG does not match UPSTREAM_VERSION ($upstream). Tag v${upstream#v} or v${upstream#v}.N."
+            echo "::error::Version $version does not match UPSTREAM_VERSION ($upstream). Use ${upstream#v} or ${upstream#v}.N."
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -70,11 +85,46 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "Version: $version" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check and pack
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: scripts/ci.sh all
+
+      - name: Native AOT
+        run: scripts/ci.sh aot
+
+      - name: Upload packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: |
+            artifacts/*.nupkg
+            artifacts/*.snupkg
+          if-no-files-found: error
+
+  publish:
+    name: Publish to nuget.org
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: nuget
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # nuget.org Trusted Publishing
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: artifacts
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
 
       - name: Log in to nuget.org
         id: nuget
@@ -86,6 +136,7 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
         run: |
+          # Pushing a .nupkg also pushes the .snupkg next to it to the nuget.org symbol server.
           dotnet nuget push "artifacts/*.nupkg" \
             --source https://api.nuget.org/v3/index.json \
             --api-key "$NUGET_API_KEY" \
@@ -94,11 +145,12 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
           args=(--verify-tag --generate-notes --title "$TAG")
           if [[ "$PRERELEASE" == "true" ]]; then
             args+=(--prerelease)
           fi
-          gh release create "$TAG" artifacts/*.nupkg "${args[@]}"
+          gh release create "$TAG" artifacts/*.nupkg artifacts/*.snupkg "${args[@]}"
