@@ -55,6 +55,7 @@ internal sealed class CallbackServer : IAsyncDisposable
         }
         catch (SocketException)
         {
+            listener.Dispose();
             return null;
         }
 
@@ -78,7 +79,7 @@ internal sealed class CallbackServer : IAsyncDisposable
         }
         catch (SocketException)
         {
-            listener.Stop();
+            listener.Dispose();
             return null;
         }
     }
@@ -91,7 +92,7 @@ internal sealed class CallbackServer : IAsyncDisposable
         await _stop.CancelAsync().ConfigureAwait(false);
         foreach (var listener in _listeners)
         {
-            listener.Stop();
+            listener.Dispose(); // Also stops it.
         }
 
         // Never faults: TryAcceptAsync turns every shutdown error into the end of the loop.
