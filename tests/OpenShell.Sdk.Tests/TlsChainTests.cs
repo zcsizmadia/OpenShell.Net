@@ -50,6 +50,22 @@ public class TlsChainTests
     }
 
     [Test]
+    public async Task Pinned_roots_replace_the_system_roots()
+    {
+        using var pinnedPki = TestPki.Create("pinned");
+        using var publicPki = TestPki.Create("public");
+        var pinned = new X509Certificate2Collection(pinnedPki.Root);
+
+        // The platform reports no errors, as it would for a certificate from a publicly trusted CA. With pins
+        // configured that verdict must not be enough: the certificate has to chain to a pinned root.
+        using var publicChain = Built(publicPki.Leaf, publicPki.Intermediate, publicPki.Root);
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, publicPki.Leaf, publicChain, SslPolicyErrors.None)).IsFalse();
+
+        using var pinnedChain = Built(pinnedPki.Leaf, pinnedPki.Intermediate, pinnedPki.Root);
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, pinnedPki.Leaf, pinnedChain, SslPolicyErrors.None)).IsTrue();
+    }
+
+    [Test]
     public async Task A_root_the_server_sent_is_never_trusted()
     {
         using var pinnedPki = TestPki.Create("pinned");

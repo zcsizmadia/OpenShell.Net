@@ -220,7 +220,8 @@ public class TransportTests
         using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
 
         await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, null, SslPolicyErrors.RemoteCertificateNameMismatch)).IsFalse();
-        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, null, SslPolicyErrors.None)).IsTrue();
+        // The platform's verdict (here: trusted) never overrides the pins; this certificate chains to none of them.
+        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, null, SslPolicyErrors.None)).IsFalse();
     }
 
     [Test]
