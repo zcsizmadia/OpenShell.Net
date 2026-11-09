@@ -106,7 +106,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | In-memory fake client (`OpenShell.Sdk.Testing`; 16 contract scenarios run against both the fake and the real client) | G | ✅ |
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
 | Shared conformance fixtures consumed by tests (`sdk/conformance/*.json`) | G T P | ✅ |
-| Unit tests on an in-memory gRPC invoker, net8.0, net10.0 and net11.0 | G T P | ✅ |
+| Unit tests on an in-memory gRPC invoker, net8.0, net10.0 and net11.0 runtimes | G T P | ✅ |
 | Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ⚠️ written, skipped without a gateway, never run against a real one |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
 
@@ -148,9 +148,9 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 
 ## .NET specifics
 
-- Targets `net8.0` and `net10.0`; `net11.0` is listed temporarily to surface new analyzer warnings and is
-  removed before the pull request if .NET 11 is not generally available. The list lives in
-  `OpenShellSdkTargetFrameworks` in `Directory.Build.props`.
+- Targets `net8.0` and `net10.0`; the tests also run on `net11.0`, loading the `net10.0` build. A newer target
+  is added only when the code needs its APIs. Building needs the .NET 11 SDK for C# 15. The lists live in
+  `OpenShellSdkTargetFrameworks` and `OpenShellTestTargetFrameworks` in `Directory.Build.props`.
 - Async only, with `CancellationToken` everywhere and `IAsyncEnumerable<T>` for streams and pages.
 - Records and `required` or `init` members for domain types; the generated protobuf types stay reachable
   through `Raw`.
