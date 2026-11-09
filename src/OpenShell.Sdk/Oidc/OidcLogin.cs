@@ -110,38 +110,37 @@ public static class OidcLogin
         }
 
         var state = OidcFlows.RandomToken(16);
-        string code;
-        string redirectUri;
-        if (cfg.Options.UseKeyboardFlow)
-        {
-            redirectUri = OidcFlows.OutOfBandRedirect;
-            code = await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            (code, redirectUri) = await BrowserAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false);
-        }
+        var (code, redirectUri) = cfg.Options.UseKeyboardFlow
+            ? await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false)
+            : await BrowserAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false);
 
         return await OidcFlows.ExchangeCodeAsync(cfg, metadata.TokenEndpoint, code, redirectUri, verifier, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The loopback ports to try: the configured one, or the defaults when it is 0.</summary>
+    internal static IReadOnlyList<int> CallbackPorts(int configured) => configured != 0 ? [configured] : DefaultCallbackPorts;
+
+    /// <summary>Starts the callback server on the first port that is free, or returns null when none is.</summary>
+    internal static CallbackServer? StartCallbackServer(IReadOnlyList<int> ports, string state)
+    {
+        foreach (var port in ports)
+        {
+            if (CallbackServer.TryStart(port, state) is { } server)
+            {
+                return server;
+            }
+        }
+
+        return null;
     }
 
     private static async Task<(string Code, string RedirectUri)> BrowserAsync(
         OidcResolved cfg, OidcProviderMetadata metadata, string state, string? challenge, CancellationToken ct)
     {
-        var ports = cfg.Options.CallbackPort != 0 ? [cfg.Options.CallbackPort] : DefaultCallbackPorts;
-        CallbackServer? server = null;
-        foreach (var port in ports)
-        {
-            server = CallbackServer.TryStart(port, state);
-            if (server is not null)
-            {
-                break;
-            }
-        }
-
+        var server = StartCallbackServer(CallbackPorts(cfg.Options.CallbackPort), state);
         if (server is null)
         {
-            return (await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false), OidcFlows.OutOfBandRedirect);
+            return await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false);
         }
 
         await using (server.ConfigureAwait(false))
@@ -155,14 +154,15 @@ public static class OidcLogin
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
-                return (await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false), OidcFlows.OutOfBandRedirect);
+                return await KeyboardAsync(cfg, metadata, state, challenge, ct).ConfigureAwait(false);
             }
 
             return (await server.WaitForCodeAsync().WaitAsync(ct).ConfigureAwait(false), redirectUri);
         }
     }
 
-    private static async Task<string> KeyboardAsync(
+    /// <summary>The paste-the-code flow; returns the code and the out-of-band redirect URI it was issued for.</summary>
+    private static async Task<(string Code, string RedirectUri)> KeyboardAsync(
         OidcResolved cfg, OidcProviderMetadata metadata, string state, string? challenge, CancellationToken ct)
     {
         var url = OidcFlows.BuildAuthorizationUrl(metadata.AuthorizationEndpoint, cfg.ClientId, OidcFlows.OutOfBandRedirect, state, challenge, cfg.InteractiveScopes);
@@ -173,22 +173,24 @@ public static class OidcLogin
         await output.WriteAsync(prompt.AsMemory(), ct).ConfigureAwait(false);
         await output.FlushAsync(ct).ConfigureAwait(false);
 
-        string? line;
+        var line = await ReadLineAsync(input, ct).ConfigureAwait(false)
+            ?? throw new OidcException(OidcFailure.AuthCode, "no authorization code received (EOF)");
+
+        var code = line.Trim();
+        return code.Length == 0
+            ? throw new OidcException(OidcFailure.AuthCode, "empty authorization code")
+            : (code, OidcFlows.OutOfBandRedirect);
+    }
+
+    private static async Task<string?> ReadLineAsync(TextReader input, CancellationToken ct)
+    {
         try
         {
-            line = await input.ReadLineAsync(ct).ConfigureAwait(false);
+            return await input.ReadLineAsync(ct).ConfigureAwait(false);
         }
         catch (IOException)
         {
             throw new OidcException(OidcFailure.AuthCode, "failed to read authorization code");
         }
-
-        if (line is null)
-        {
-            throw new OidcException(OidcFailure.AuthCode, "no authorization code received (EOF)");
-        }
-
-        var code = line.Trim();
-        return code.Length == 0 ? throw new OidcException(OidcFailure.AuthCode, "empty authorization code") : code;
     }
 }
