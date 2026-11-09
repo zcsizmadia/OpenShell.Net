@@ -77,6 +77,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if ! scripts/sync-upstream.sh --check; then
+          # Exit 1 means "behind"; anything else is a real failure and fails the job.
+          status=0
+          scripts/sync-upstream.sh --check || status=$?
+          if [ "$status" -eq 1 ]; then
             echo "::warning title=Upstream drift::$(cat UPSTREAM_VERSION | tr -d '\n') is behind the latest NVIDIA/OpenShell release ($(scripts/sync-upstream.sh --latest)). Run scripts/sync-upstream.sh or the upstream-sync workflow."
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
           fi
