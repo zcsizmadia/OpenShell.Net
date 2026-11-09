@@ -71,7 +71,7 @@ public class ProviderTests
             await Assert.That(typeChange!.Kind).IsEqualTo(OpenShellErrorKind.InvalidArgument);
 
             var duplicate = await Assert.That(async () => await client.Providers.CreateAsync(
-                new Provider { Name = name, Type = type, Credentials = new Dictionary<string, string> { [TokenKey] = Secret } },
+                new Provider { Name = name, Type = type, ProfileWorkspace = GatewayFixture.Workspace, Credentials = new Dictionary<string, string> { [TokenKey] = Secret } },
                 cancellationToken: cancellationToken)).Throws<OpenShellException>();
             await Assert.That(duplicate!.IsAlreadyExists).IsTrue();
 
@@ -281,7 +281,7 @@ public class ProviderTests
     /// <summary>
     /// Imports a workspace profile that declares <see cref="TokenKey"/>; the gateway release ships no built-in profiles.
     /// Credentials of a profile without endpoints are withheld from sandboxes unless policy binds them, so a test that
-    /// injects credentials asks for an endpoint.
+    /// injects credentials asks for an endpoint (L4-only, so it must allow uninspected credentials).
     /// </summary>
     private static async Task<string> ImportProfileAsync(OpenShellClient client, bool withEndpoint, CancellationToken cancellationToken)
     {
@@ -292,7 +292,7 @@ public class ProviderTests
             DisplayName = "dotnet integration provider type",
             Category = ProviderProfileCategory.Other,
             Credentials = [new ProfileCredential { Name = "token", EnvVars = [TokenKey], Required = true }],
-            Endpoints = withEndpoint ? [new Openshell.Sandbox.V1.NetworkEndpoint { Host = "dn-it.example.com", Port = 443 }] : [],
+            Endpoints = withEndpoint ? [new Openshell.Sandbox.V1.NetworkEndpoint { Host = "dn-it.example.com", Port = 443, AllowUninspectedCredentials = true }] : [],
             Binaries = withEndpoint ? [new Openshell.Sandbox.V1.NetworkBinary { Path = "/usr/bin/curl" }] : [],
         };
         var imported = await client.Providers.Profiles.ImportAsync([new ProfileImportItem(profile, $"{id}.yaml")], cancellationToken: cancellationToken);
