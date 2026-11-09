@@ -112,7 +112,9 @@ public class SandboxUpdateTests
         using var client = ClientTests.NewClient(invoker);
         var change = new SandboxUpdate { Image = "img:2" };
 
-        await Assert.That(async () => await client.Sandboxes.UpdateAsync("sb", 1, new SandboxUpdate())).Throws<ArgumentException>();
+        var empty = await Assert.That(async () => await client.Sandboxes.UpdateAsync("sb", 1, new SandboxUpdate())).Throws<ArgumentException>();
+        await Assert.That(empty!.Message).StartsWith("select at least one field to update; use ResumePendingUpdateAsync to complete a pending update");
+        await Assert.That(empty.ParamName).IsEqualTo("update");
         await Assert.That(async () => await client.Sandboxes.UpdateAsync("sb", 1, new SandboxUpdate { Image = " " })).Throws<ArgumentException>();
         await Assert.That(async () => await client.Sandboxes.UpdateAsync("sb", 0, change)).Throws<ArgumentOutOfRangeException>();
         await Assert.That(async () => await client.Sandboxes.UpdateAsync("", 1, change)).Throws<ArgumentException>();
