@@ -47,12 +47,17 @@ jobs:
             10.0.x
             11.0.x
 
-      # Format, build, unit tests on every framework, coverage summary, and a pack dry run that
-      # stamps a CI prerelease of the upstream version, such as 0.1.7-ci.42.
+      # Format, build, unit tests on every framework, coverage summary, a pack that stamps a CI
+      # prerelease of the upstream version (such as 0.1.7-ci.42) with package validation, and a
+      # consumer app restored from those packages on every framework.
       - name: Check
         env:
           VERSION_SUFFIX: ci.${{ github.run_number }}
         run: scripts/ci.sh all
+
+      # Native AOT publish of a consumer app from the same packages; trim and AOT warnings fail it.
+      - name: Native AOT
+        run: scripts/ci.sh aot
 
       - name: Upload packages
         if: matrix.os == 'ubuntu-latest'

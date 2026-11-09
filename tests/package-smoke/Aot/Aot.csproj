@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+    SPDX-License-Identifier: Apache-2.0
+
+    Published with Native AOT by scripts/ci.sh aot. Trim and AOT warnings fail the publish, so the packages'
+    IsAotCompatible claim is tested rather than assumed. The Testing package is not AOT compatible and is left out.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <IlcTreatWarningsAsErrors>true</IlcTreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenShell.Net" Version="$(OpenShellPackageVersion)" />
+    <PackageReference Include="OpenShell.Net.DependencyInjection" Version="$(OpenShellPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+  </ItemGroup>
+</Project>

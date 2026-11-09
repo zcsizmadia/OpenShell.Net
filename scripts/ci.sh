@@ -10,7 +10,9 @@
 #   scripts/ci.sh coverage      run the unit tests with coverage on the newest framework (after build)
 #   scripts/ci.sh integration   run the integration tests against OPENSHELL_GATEWAY_ADDRESS (after build)
 #   scripts/ci.sh pack          pack the NuGet packages into artifacts/
-#   scripts/ci.sh all           format, build, test, coverage, pack
+#   scripts/ci.sh smoke         restore the packed packages into a consumer app and run it on every test framework
+#   scripts/ci.sh aot           publish a consumer app with Native AOT (trim and AOT warnings fail) and run it
+#   scripts/ci.sh all           format, build, test, coverage, pack, smoke
 #
 # Versions (see src/Directory.Build.props): builds default to <UPSTREAM_VERSION>-dev. Set VERSION to the full
 # release version (0.1.7, 0.1.7.1, 0.1.7-preview.1), or VERSION_SUFFIX to replace "dev" (ci.42).
@@ -94,6 +96,40 @@ step_integration() {
   dotnet run --project tests/OpenShell.Sdk.IntegrationTests --no-build -c Release -f "$LATEST"
 }
 
+# Reads the version that pack produced, for example 0.1.7-dev, from the OpenShell.Net package file name.
+package_version() {
+  local nupkg
+  nupkg="$(ls artifacts/OpenShell.Net.[0-9]*.nupkg 2>/dev/null | head -n 1)"
+  if [[ -z "$nupkg" ]]; then
+    echo "error: no OpenShell.Net package in artifacts/; run scripts/ci.sh pack first" >&2
+    exit 2
+  fi
+  nupkg="${nupkg##*/OpenShell.Net.}"
+  PACKAGE_VERSION="${nupkg%.nupkg}"
+  # The version is reused between packs, so drop previously restored copies of our packages.
+  rm -rf tests/package-smoke/.packages/openshell.net*
+}
+
+step_smoke() {
+  package_version
+  target_frameworks
+  rm -rf tests/package-smoke/Consumer/bin tests/package-smoke/Consumer/obj
+  for tfm in "${TFMS[@]}"; do
+    echo "== smoke OpenShell.Net $PACKAGE_VERSION on $tfm"
+    dotnet run --project tests/package-smoke/Consumer -c Release -f "$tfm" -p:OpenShellPackageVersion="$PACKAGE_VERSION"
+  done
+}
+
+step_aot() {
+  package_version
+  local out=tests/package-smoke/.aot
+  rm -rf "$out" tests/package-smoke/Aot/bin tests/package-smoke/Aot/obj
+  echo "== Native AOT publish of OpenShell.Net $PACKAGE_VERSION"
+  dotnet publish tests/package-smoke/Aot -c Release -o "$out" -p:OpenShellPackageVersion="$PACKAGE_VERSION"
+  echo "== run the Native AOT binary"
+  "$out/Aot"
+}
+
 step_pack() {
   echo "== pack"
   rm -rf artifacts
@@ -110,15 +146,18 @@ case "${1:-all}" in
   coverage) step_coverage ;;
   integration) step_integration ;;
   pack) step_pack ;;
+  smoke) step_smoke ;;
+  aot) step_aot ;;
   all)
     step_format
     step_build
     step_test
     step_coverage
     step_pack
+    step_smoke
     ;;
   *)
-    echo "usage: $0 [format|build|test|coverage|integration|pack|all]" >&2
+    echo "usage: $0 [format|build|test|coverage|integration|pack|smoke|aot|all]" >&2
     exit 2
     ;;
 esac
