@@ -448,6 +448,31 @@ public class FakeFileTests
     }
 
     [Test]
+    [Arguments("/data/f.txt:stream")]
+    [Arguments("/data/CON")]
+    [Arguments("/data/sub/aux.txt")]
+    public async Task Windows_unsafe_entries_are_not_extracted_on_Windows(string remotePath)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip.Test("Windows-only file name rules");
+        }
+
+        var dir = FakeTestHelpers.TempDirectory();
+        try
+        {
+            using var client = await FakeTestHelpers.ClientWithSandboxAsync();
+            client.Gateway.PutFile("a", remotePath, new byte[] { 1 });
+
+            await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/data", Path.Join(dir, "d"))).Throws<InvalidDataException>();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task File_arguments_are_validated_like_the_real_client()
     {
         var dir = FakeTestHelpers.TempDirectory();

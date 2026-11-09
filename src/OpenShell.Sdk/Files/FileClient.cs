@@ -295,7 +295,53 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
         }
     }
 
-    /// <summary>Resolves an archive entry name under <paramref name="root"/>, rejecting anything that would land outside it.</summary>
+    /// <summary>
+    /// True for a path segment that Windows would not store under its own name: one containing <c>:</c> (an NTFS
+    /// alternate data stream) or another character Windows forbids in file names, one ending in a dot or space (which
+    /// Windows strips), or a reserved device name such as <c>CON</c> or <c>COM1</c>, with or without an extension.
+    /// The empty and <c>.</c> segments of names such as <c>./a</c> are fine.
+    /// </summary>
+    internal static bool IsUnsafeWindowsSegment(string segment)
+    {
+        if (segment is "" or ".")
+        {
+            return false;
+        }
+
+        if (segment.EndsWith('.') || segment.EndsWith(' '))
+        {
+            return true;
+        }
+
+        foreach (var c in segment)
+        {
+            if (c < ' ' || c is ':' or '<' or '>' or '"' or '|' or '?' or '*')
+            {
+                return true;
+            }
+        }
+
+        // Windows maps "CON.txt" and "con .tar.gz" to the device as well.
+        var dot = segment.IndexOf('.', StringComparison.Ordinal);
+        var stem = (dot < 0 ? segment : segment[..dot]).TrimEnd(' ');
+        return stem.Length switch
+        {
+            3 => stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase)
+                || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase),
+            4 => (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) || stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
+                && stem[3] is (>= '0' and <= '9') or '¹' or '²' or '³',
+            6 => stem.Equals("CONIN$", StringComparison.OrdinalIgnoreCase),
+            7 => stem.Equals("CONOUT$", StringComparison.OrdinalIgnoreCase),
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Resolves an archive entry name under <paramref name="root"/>, rejecting anything that would land outside it and,
+    /// on Windows, names that would reach an alternate data stream or a device (see <see cref="IsUnsafeWindowsSegment"/>).
+    /// </summary>
     internal static string? SafeTarget(string root, string entryName)
     {
         if (entryName.Contains('\0', StringComparison.Ordinal) || Path.IsPathRooted(entryName) || entryName.StartsWith('/') || entryName.StartsWith('\\'))
@@ -303,9 +349,10 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
             throw new InvalidDataException($"unsafe tar entry name '{entryName}'");
         }
 
+        var windows = OperatingSystem.IsWindows();
         foreach (var segment in entryName.Split('/', '\\'))
         {
-            if (segment == "..")
+            if (segment == ".." || (windows && IsUnsafeWindowsSegment(segment)))
             {
                 throw new InvalidDataException($"unsafe tar entry name '{entryName}'");
             }

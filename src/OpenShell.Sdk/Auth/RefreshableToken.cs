@@ -3,10 +3,14 @@
 
 namespace OpenShell;
 
-/// <summary>A token with an optional absolute expiry.</summary>
-/// <param name="Value">The bearer token.</param>
+/// <summary>A token with an optional absolute expiry. Its <see cref="ToString"/> never reveals the value.</summary>
+/// <param name="Value">The bearer token. Keep it out of logs.</param>
 /// <param name="ExpiresAt">When the token expires; null when unknown or it does not expire.</param>
-public sealed record AccessToken(string Value, DateTimeOffset? ExpiresAt = null);
+public sealed record AccessToken(string Value, DateTimeOffset? ExpiresAt = null)
+{
+    /// <summary>Redacts the token; explicit property access still exposes it.</summary>
+    public override string ToString() => "AccessToken { ... }";
+}
 
 /// <summary>Obtains a fresh <see cref="AccessToken"/>, for example through an OIDC refresh grant.</summary>
 public delegate ValueTask<AccessToken> TokenRefresher(CancellationToken cancellationToken);

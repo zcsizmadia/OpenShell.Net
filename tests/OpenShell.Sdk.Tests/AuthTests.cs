@@ -210,4 +210,25 @@ public class RefreshableTokenTests
         await Assert.That(request.Headers.Authorization!.Parameter).IsEqualTo("a");
         await Assert.That(await provider.TryRecoverAsync(CancellationToken.None)).IsTrue();
     }
+
+    [Test]
+    public async Task AccessToken_ToString_does_not_reveal_the_value()
+    {
+        var token = new AccessToken("secret-bearer-value", DateTimeOffset.UnixEpoch);
+
+        await Assert.That(token.ToString()).DoesNotContain("secret-bearer-value");
+        await Assert.That($"{token}").DoesNotContain("secret-bearer-value");
+        await Assert.That(token.Value).IsEqualTo("secret-bearer-value");
+        await Assert.That(token).IsEqualTo(new AccessToken("secret-bearer-value", DateTimeOffset.UnixEpoch));
+    }
+
+    [Test]
+    public async Task Records_that_hold_tokens_do_not_print_them()
+    {
+        var tokens = new OpenShell.Oidc.OidcTokens("secret-access", "secret-refresh", "Bearer", DateTimeOffset.UnixEpoch);
+
+        await Assert.That(tokens.ToAccessToken().ToString()).DoesNotContain("secret");
+        await Assert.That(new OpenShell.Oidc.StoredOidcToken(tokens, "https://issuer", "cli").ToString()).DoesNotContain("secret");
+        await Assert.That(new ProviderCredentialValue("secret-credential").ToString()).DoesNotContain("secret");
+    }
 }

@@ -156,6 +156,74 @@ public class CallbackServerTests
         await Assert.That(CallbackServer.TryStart(first.Port, "s")).IsNull();
     }
 
+    /// <summary>Skips the test when this host cannot listen on the IPv6 loopback address at all.</summary>
+    private static void RequireIPv6Loopback()
+    {
+        if (!Socket.OSSupportsIPv6)
+        {
+            Skip.Test("IPv6 is not available on this host");
+        }
+
+        using var probe = new TcpListener(IPAddress.IPv6Loopback, 0);
+        try
+        {
+            probe.Start();
+        }
+        catch (SocketException)
+        {
+            Skip.Test("the IPv6 loopback address cannot be bound on this host");
+        }
+    }
+
+    [Test]
+    public async Task The_code_is_also_delivered_over_the_IPv6_loopback()
+    {
+        // The redirect URI says "localhost", which a browser may resolve to ::1 first.
+        RequireIPv6Loopback();
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        using var client = new TcpClient(AddressFamily.InterNetworkV6);
+        await client.ConnectAsync(IPAddress.IPv6Loopback, server.Port);
+        var stream = client.GetStream();
+        await stream.WriteAsync("GET /callback?code=v6&state=s HTTP/1.1\r\nHost: localhost\r\n\r\n"u8.ToArray());
+        using var reader = new StreamReader(stream, Encoding.ASCII);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var response = await reader.ReadToEndAsync(cts.Token);
+
+        await Assert.That(server.ListensOnIPv6).IsTrue();
+        await Assert.That(response).Contains("200 OK");
+        await Assert.That(await server.WaitForCodeAsync().WaitAsync(TimeSpan.FromSeconds(5))).IsEqualTo("v6");
+    }
+
+    [Test]
+    public async Task A_taken_IPv6_port_leaves_the_IPv4_listener_working()
+    {
+        RequireIPv6Loopback();
+        using var squatter = new TcpListener(IPAddress.IPv6Loopback, 0);
+        squatter.Start();
+        var port = ((IPEndPoint)squatter.LocalEndpoint).Port;
+        await using var server = CallbackServer.TryStart(port, "s")!;
+
+        await Assert.That(server.ListensOnIPv6).IsFalse();
+        await Assert.That(await Get(server.Port, "/callback?code=v4&state=s")).Contains("200 OK");
+        await Assert.That(await server.WaitForCodeAsync().WaitAsync(TimeSpan.FromSeconds(5))).IsEqualTo("v4");
+    }
+
+    [Test]
+    public async Task Disposing_stops_both_listeners()
+    {
+        RequireIPv6Loopback();
+        var server = CallbackServer.TryStart(0, "s")!;
+        var port = server.Port;
+
+        await server.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Both ports are free again: a new server binds them.
+        await using var again = CallbackServer.TryStart(port, "s");
+        await Assert.That(again).IsNotNull();
+        await Assert.That(again!.ListensOnIPv6).IsTrue();
+    }
+
     [Test]
     public async Task Parses_queries_without_values_and_empty_input()
     {

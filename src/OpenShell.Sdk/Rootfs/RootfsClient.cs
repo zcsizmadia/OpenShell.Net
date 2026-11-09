@@ -106,24 +106,53 @@ internal sealed class RootfsClient(ClientCore core, string workspace) : IRootfsC
         return slot.StagingToken;
     }
 
-    /// <summary>Copies while counting, so an archive that grows after the size check still cannot exceed the limit.</summary>
+    /// <summary>
+    /// Copies while counting, so an archive that grows after the size check still cannot exceed the limit. A copy that
+    /// fails for any reason, cancellation included, removes the partly written file (best effort).
+    /// </summary>
     internal static async ValueTask CopyWithLimitAsync(string source, string destination, ulong limit, CancellationToken cancellationToken)
     {
         await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, useAsync: true);
-        await using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, useAsync: true);
-        var buffer = new byte[CopyBufferSize];
-        ulong total = 0;
-        int read;
-        while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+        var created = false;
+        try
         {
-            total += (ulong)read;
-            if (limit > 0 && total > limit)
+            await using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, useAsync: true))
             {
-                throw new OpenShellException(
-                    OpenShellErrorKind.InvalidArgument, $"{Path.GetFileName(source)} exceeds the {limit} byte staging limit");
-            }
+                created = true;
+                var buffer = new byte[CopyBufferSize];
+                ulong total = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                {
+                    total += (ulong)read;
+                    if (limit > 0 && total > limit)
+                    {
+                        throw new OpenShellException(
+                            OpenShellErrorKind.InvalidArgument, $"{Path.GetFileName(source)} exceeds the {limit} byte staging limit");
+                    }
 
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch when (created)
+        {
+            // The output is closed by now, so the partial archive can be removed. A destination that could not even be
+            // opened is left alone.
+            TryDelete(destination);
+            throw;
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Best effort: the gateway reclaims an unused slot when it expires.
         }
     }
 }

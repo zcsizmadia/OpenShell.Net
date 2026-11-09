@@ -41,7 +41,7 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            var call = await ClientCore.OpenDuplexAsync(
+            var call = await core.OpenDuplexAsync(
                 headers => core.Grpc.ExecSandboxInteractive(new CallOptions(headers: headers, cancellationToken: cts.Token)),
                 new Wire.ExecSandboxInput { Start = start },
                 replica,

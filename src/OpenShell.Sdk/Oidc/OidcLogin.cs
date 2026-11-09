@@ -145,6 +145,8 @@ public static class OidcLogin
 
         await using (server.ConfigureAwait(false))
         {
+            // The same redirect URI as the Go SDK, so identity providers registered for it keep matching. "localhost"
+            // may resolve to ::1 or 127.0.0.1; the callback server listens on both.
             var redirectUri = $"http://localhost:{OidcFlows.FormatPort(server.Port)}/callback";
             var url = OidcFlows.BuildAuthorizationUrl(metadata.AuthorizationEndpoint, cfg.ClientId, redirectUri, state, challenge, cfg.InteractiveScopes);
             try

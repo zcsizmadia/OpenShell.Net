@@ -99,6 +99,8 @@ internal sealed class ClientCore : IDisposable
     /// Runs a server-streaming call, mapping gRPC failures to <see cref="OpenShellException"/>. With a
     /// <paramref name="replica"/>, the call is routed to it and reopened once unrouted when the replica cannot be
     /// reached (see <see cref="Transport.OwnerRouting"/>); <paramref name="onUnrouted"/> runs before that retry.
+    /// A call the gateway rejects as <c>Unauthenticated</c> before any message arrived is reopened once when the auth
+    /// provider renews its credentials, as for unary calls.
     /// </summary>
     public async IAsyncEnumerable<TResponse> StreamAsync<TResponse>(
         Func<CallOptions, AsyncServerStreamingCall<TResponse>> call,
@@ -107,18 +109,64 @@ internal sealed class ClientCore : IDisposable
         Action? onUnrouted = null)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
-        var active = await OpenStreamAsync(call, replica, onUnrouted, cancellationToken).ConfigureAwait(false);
-        try
+        var opened = await OpenFirstAsync(call, replica, onUnrouted, cancellationToken).ConfigureAwait(false);
+        using var active = opened.Call;
+        if (!opened.HasFirst)
         {
-            var stream = active.ResponseStream;
-            while (await MoveNextAsync(stream, cancellationToken).ConfigureAwait(false))
-            {
-                yield return stream.Current;
-            }
+            yield break;
         }
-        finally
+
+        var stream = active.ResponseStream;
+        yield return stream.Current;
+        while (await MoveNextAsync(stream, cancellationToken).ConfigureAwait(false))
         {
-            active.Dispose();
+            yield return stream.Current;
+        }
+    }
+
+    /// <summary>
+    /// Opens a server stream and waits for its first message or its end. Only here, before anything was received, is an
+    /// <c>Unauthenticated</c> rejection retried: once, and only when the auth provider renewed its credentials.
+    /// </summary>
+    private async ValueTask<(AsyncServerStreamingCall<TResponse> Call, bool HasFirst)> OpenFirstAsync<TResponse>(
+        Func<CallOptions, AsyncServerStreamingCall<TResponse>> call,
+        string? replica,
+        Action? onUnrouted,
+        CancellationToken cancellationToken)
+    {
+        // A replica found unreachable is not routed to again on the retry.
+        var route = replica;
+        void Unrouted()
+        {
+            route = null;
+            onUnrouted?.Invoke();
+        }
+
+        for (var attempt = 0; ; attempt++)
+        {
+            var active = await OpenStreamAsync(call, route, Unrouted, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return (active, await active.ResponseStream.MoveNext(cancellationToken).ConfigureAwait(false));
+            }
+            catch (RpcException e) when (e.StatusCode == StatusCode.Unauthenticated && attempt == 0)
+            {
+                active.Dispose();
+                if (!await TryRecoverAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    throw Map(e, cancellationToken);
+                }
+            }
+            catch (RpcException e)
+            {
+                active.Dispose();
+                throw Map(e, cancellationToken);
+            }
+            catch
+            {
+                active.Dispose();
+                throw;
+            }
         }
     }
 
@@ -139,7 +187,66 @@ internal sealed class ClientCore : IDisposable
     /// waits for the gateway to answer; when the replica cannot be reached it is reopened unrouted once, resending
     /// the first frame. Failures surface as <see cref="RpcException"/> for the caller to map.
     /// </summary>
-    public static async ValueTask<AsyncDuplexStreamingCall<TRequest, TResponse>> OpenDuplexAsync<TRequest, TResponse>(
+    /// <remarks>
+    /// When the auth provider sends credentials, the open also waits for the gateway to answer. A call it rejects as
+    /// <c>Unauthenticated</c> never reached the handler and nothing was received, so it is reopened once, resending
+    /// the first frame, when the provider renews its credentials. Nothing is retried once the gateway answered.
+    /// </remarks>
+    public async ValueTask<AsyncDuplexStreamingCall<TRequest, TResponse>> OpenDuplexAsync<TRequest, TResponse>(
+        Func<Metadata?, AsyncDuplexStreamingCall<TRequest, TResponse>> open,
+        TRequest first,
+        string? replica,
+        Action? onUnrouted,
+        CancellationToken cancellationToken)
+    {
+        if (!Options.Auth.SendsCredentials)
+        {
+            return await OpenDuplexOnceAsync(open, first, replica, onUnrouted, cancellationToken).ConfigureAwait(false);
+        }
+
+        // A replica found unreachable is not routed to again on the retry.
+        var route = replica;
+        void Unrouted()
+        {
+            route = null;
+            onUnrouted?.Invoke();
+        }
+
+        for (var attempt = 0; ; attempt++)
+        {
+            RpcException rejected;
+            try
+            {
+                var call = await OpenDuplexOnceAsync(open, first, route, Unrouted, cancellationToken).ConfigureAwait(false);
+                if (attempt > 0)
+                {
+                    return call;
+                }
+
+                // A routed open already waited for this answer; an unrouted one waits here.
+                if (await Transport.OwnerRouting.UnansweredAsync(call.ResponseHeadersAsync).ConfigureAwait(false)
+                    is not { StatusCode: StatusCode.Unauthenticated } failure)
+                {
+                    // Answered, or failed for another reason that reading the call reports.
+                    return call;
+                }
+
+                call.Dispose();
+                rejected = failure;
+            }
+            catch (RpcException e) when (e.StatusCode == StatusCode.Unauthenticated && attempt == 0)
+            {
+                rejected = e;
+            }
+
+            if (!await TryRecoverAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw rejected;
+            }
+        }
+    }
+
+    private static async ValueTask<AsyncDuplexStreamingCall<TRequest, TResponse>> OpenDuplexOnceAsync<TRequest, TResponse>(
         Func<Metadata?, AsyncDuplexStreamingCall<TRequest, TResponse>> open,
         TRequest first,
         string? replica,

@@ -11,32 +11,40 @@ namespace OpenShell.Oidc;
 /// A single-purpose loopback HTTP listener that receives the OAuth redirect. Requests whose
 /// <c>state</c> does not match are answered with 400 and ignored, so a stray local request cannot abort a login.
 /// </summary>
+/// <remarks>
+/// The redirect URI names <c>localhost</c> (as the Go SDK does), which a browser may resolve to <c>::1</c> before
+/// <c>127.0.0.1</c>. The server therefore listens on both loopback addresses with the same port when IPv6 is available.
+/// </remarks>
 internal sealed class CallbackServer : IAsyncDisposable
 {
     private const int MaxHeadBytes = 8192;
     private static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
 
-    private readonly TcpListener _listener;
+    private readonly TcpListener[] _listeners;
     private readonly string _expectedState;
     private readonly TimeSpan _requestTimeout;
     private readonly CancellationTokenSource _stop = new();
     private readonly TaskCompletionSource<string> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Task _acceptLoop;
+    private readonly Task[] _acceptLoops;
 
-    private CallbackServer(TcpListener listener, string expectedState, TimeSpan requestTimeout)
+    private CallbackServer(TcpListener[] listeners, string expectedState, TimeSpan requestTimeout)
     {
-        _listener = listener;
+        _listeners = listeners;
         _expectedState = expectedState;
         _requestTimeout = requestTimeout;
-        Port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        _acceptLoop = Task.Run(AcceptLoopAsync);
+        Port = ((IPEndPoint)listeners[0].LocalEndpoint).Port;
+        _acceptLoops = Array.ConvertAll(listeners, l => Task.Run(() => AcceptLoopAsync(l)));
     }
 
     public int Port { get; }
 
+    /// <summary>True when the server also listens on the IPv6 loopback address.</summary>
+    internal bool ListensOnIPv6 => _listeners.Length > 1;
+
     /// <summary>
-    /// Starts listening on 127.0.0.1, or returns null when the port is unavailable. A connection that has not sent its
-    /// request line within <paramref name="requestTimeout"/> (10 seconds by default) is dropped.
+    /// Starts listening on 127.0.0.1, and on [::1] with the same port when possible, or returns null when the IPv4
+    /// port is unavailable. A connection that has not sent its request line within <paramref name="requestTimeout"/>
+    /// (10 seconds by default) is dropped.
     /// </summary>
     public static CallbackServer? TryStart(int port, string expectedState, TimeSpan? requestTimeout = null)
     {
@@ -50,7 +58,29 @@ internal sealed class CallbackServer : IAsyncDisposable
             return null;
         }
 
-        return new CallbackServer(listener, expectedState, requestTimeout ?? DefaultRequestTimeout);
+        TcpListener[] listeners = TryListenIPv6(((IPEndPoint)listener.LocalEndpoint).Port) is { } v6 ? [listener, v6] : [listener];
+        return new CallbackServer(listeners, expectedState, requestTimeout ?? DefaultRequestTimeout);
+    }
+
+    /// <summary>The IPv6 loopback listener on <paramref name="port"/>, or null when IPv6 is off or the port is taken there.</summary>
+    private static TcpListener? TryListenIPv6(int port)
+    {
+        if (!Socket.OSSupportsIPv6)
+        {
+            return null;
+        }
+
+        var listener = new TcpListener(IPAddress.IPv6Loopback, port);
+        try
+        {
+            listener.Start();
+            return listener;
+        }
+        catch (SocketException)
+        {
+            listener.Stop();
+            return null;
+        }
     }
 
     /// <summary>Completes with the authorization code, or faults when the provider reports an error.</summary>
@@ -59,27 +89,30 @@ internal sealed class CallbackServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync().ConfigureAwait(false);
-        _listener.Stop();
+        foreach (var listener in _listeners)
+        {
+            listener.Stop();
+        }
 
         // Never faults: TryAcceptAsync turns every shutdown error into the end of the loop.
-        await _acceptLoop.ConfigureAwait(false);
+        await Task.WhenAll(_acceptLoops).ConfigureAwait(false);
         _stop.Dispose();
     }
 
-    private async Task AcceptLoopAsync()
+    private async Task AcceptLoopAsync(TcpListener listener)
     {
-        while (await TryAcceptAsync().ConfigureAwait(false) is { } client)
+        while (await TryAcceptAsync(listener).ConfigureAwait(false) is { } client)
         {
             _ = HandleAsync(client);
         }
     }
 
     /// <summary>The next connection, or null once the server is shutting down.</summary>
-    private async Task<TcpClient?> TryAcceptAsync()
+    private async Task<TcpClient?> TryAcceptAsync(TcpListener listener)
     {
         try
         {
-            return await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
+            return await listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
         }
         catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException or InvalidOperationException)
         {
