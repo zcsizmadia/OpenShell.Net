@@ -55,7 +55,7 @@ To dry-run a release without publishing, run the workflow manually (Actions → 
 git tag v0.1.7 && git push origin v0.1.7
 ```
 
-After a release, set `PackageValidationBaselineVersion` in `src/Directory.Build.props` to it, so a breaking public API change fails the build.
+After a release, raise `PackageValidationBaselineVersion` in `src/Directory.Build.props` to it, so a breaking public API change against the latest release fails the build.
 
 ## Mutation testing
 
