@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Errors
 
-Every SDK operation throws <xref:OpenShell.OpenShellException>. Switch on its `Kind`, an <xref:OpenShell.OpenShellErrorKind>. Gateway errors map from the gRPC status; the last four kinds come from the client itself.
+SDK operations report failures as <xref:OpenShell.OpenShellException>, apart from the .NET exceptions listed after the table. Switch on its `Kind`, an <xref:OpenShell.OpenShellErrorKind>. Gateway errors map from the gRPC status; the last four kinds come from the client itself.
 
 | Kind | Meaning | gRPC status |
 | --- | --- | --- |
@@ -22,15 +22,17 @@ Every SDK operation throws <xref:OpenShell.OpenShellException>. Switch on its `K
 | `Internal` | The gateway reported an internal error. | `INTERNAL`, `DATA_LOSS` |
 | `Unknown` | Anything else. | `UNKNOWN`, `RESOURCE_EXHAUSTED`, and other codes |
 | `InvalidConfig` | The client was configured inconsistently or unsafely. | (client side) |
-| `Tls` | TLS material could not be loaded, for example a registered gateway's mTLS bundle. | (client side) |
-| `Connect` | The gateway could not be reached. A connection failure during a call surfaces as `Unavailable`. | (client side) |
+| `Tls` | TLS material could not be loaded: <xref:OpenShell.Gateway.GatewayClient> raises it for a registered gateway's mTLS bundle. | (client side) |
+| `Connect` | Reserved; the SDK does not currently raise it. | (client side) |
 | `Auth` | Credentials could not be obtained or refreshed, for example an OIDC failure. | (client side) |
+
+A gateway that cannot be reached, and a connection or TLS handshake that fails (for example a certificate that does not chain to the trusted roots), surface as `Unavailable`, the status gRPC reports for them; they are not `Tls` or `Connect`. Certificate files named in the [dependency injection](dependency-injection.md) options are checked when the host starts, and a file that cannot be loaded fails that validation.
 
 The shortcuts `IsNotFound`, `IsAlreadyExists`, `IsConflict`, and `IsTransient` (`Unavailable` or `DeadlineExceeded`) cover the common cases, and `GrpcStatusCode` exposes the underlying gRPC status when there is one.
 
 [!code-csharp[](../snippets/ClientBehavior.cs#Errors)]
 
-Cancelling a call through its own `CancellationToken` throws `OperationCanceledException`, not `OpenShellException`. Arguments that are invalid before anything is sent (a null or empty name, an empty command) throw `ArgumentException`.
+Cancelling a call through its own `CancellationToken` throws `OperationCanceledException`, not `OpenShellException`. Arguments that are invalid before anything is sent (a null or empty name, an empty command) throw `ArgumentException`. File transfers also throw `InvalidDataException` for an archive they refuse, and `FileNotFoundException` or `DirectoryNotFoundException` for a missing local source; see [Files and rootfs](files-and-rootfs.md).
 
 ## Error details
 

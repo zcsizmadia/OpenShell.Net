@@ -82,8 +82,9 @@ public interface IExecClient
     IAsyncEnumerable<ExecEvent> StreamAsync(string sandbox, IReadOnlyList<string> command, ExecOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Starts a command with a TTY and a duplex channel: write stdin, resize the terminal, read output events.
-    /// Dispose the session to cancel the command.
+    /// Starts a command with a duplex channel: write stdin, resize the terminal, read output events. A TTY of
+    /// <paramref name="columns"/> by <paramref name="rows"/> is allocated unless <paramref name="allocateTty"/> is
+    /// false, which gives the command plain pipes. Dispose the session to cancel the command.
     /// </summary>
     ValueTask<ExecInteractiveSession> InteractiveAsync(string sandbox, IReadOnlyList<string> command, uint columns, uint rows, ExecOptions? options = null, bool allocateTty = true, CancellationToken cancellationToken = default);
 }

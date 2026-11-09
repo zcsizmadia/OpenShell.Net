@@ -9,7 +9,9 @@ Three ways to reach a port inside a sandbox: a TCP forward through the gateway (
 
 ## TCP forwarding
 
-<xref:OpenShell.ITcpClient.ForwardAsync*> opens a duplex <xref:OpenShell.ForwardStream> to a loopback port inside the sandbox. One reader and one writer may be active at the same time; `CompleteWriteAsync` half-closes the stream so the remote side sees end-of-file while the response keeps flowing.
+<xref:OpenShell.ITcpClient.ForwardAsync*> opens a duplex <xref:OpenShell.ForwardStream> to a loopback port inside the sandbox. One reader and one writer may be active at the same time; `CompleteWriteAsync` half-closes the stream so the remote side sees end-of-file while the response keeps flowing. Disposing the stream does not wait for a write that is blocked because the remote side is not reading: it cancels the write, which then throws `ObjectDisposedException` (or `OperationCanceledException` when the caller's own token cancelled it).
+
+Forwards, listeners, and SSH tunnels are streaming calls, so `OpenShellClientOptions.DefaultTimeout` does not bound them; end them by disposing them or with a `CancellationToken`. See [Retries and timeouts](retries.md#timeouts).
 
 [!code-csharp[](../snippets/Networking.cs#Forward)]
 

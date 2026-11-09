@@ -37,7 +37,7 @@ internal static class Authentication
         return client;
     }
 
-    internal static async Task<OpenShellClient> RefreshableTokenAsync()
+    internal static async Task RefreshableTokenAsync()
     {
         #region RefreshableToken
         var oidc = new OidcOptions
@@ -52,7 +52,8 @@ internal static class Authentication
             ?? throw new InvalidOperationException("the identity provider issued no refresh token");
 
         // Renews single-flight shortly before expiry, and once after the gateway answers Unauthenticated.
-        var token = new RefreshableToken(
+        // The client does not dispose it: you own it, so dispose it after the client.
+        using var token = new RefreshableToken(
             tokens.ToAccessToken(),
             async cancellationToken =>
             {
@@ -62,20 +63,23 @@ internal static class Authentication
             },
             leeway: TimeSpan.FromMinutes(1));
 
-        var client = new OpenShellClient(new OpenShellClientOptions
+        using var client = new OpenShellClient(new OpenShellClientOptions
         {
             Address = new Uri("https://gateway.example.com"),
             Auth = token.AsAuthProvider(),
         });
+
+        var health = await client.Health.CheckAsync();
         #endregion
-        return client;
+        Console.WriteLine(health);
     }
 
-    internal static OpenShellClient ClientCredentials()
+    internal static async Task ClientCredentialsAsync()
     {
         #region ClientCredentials
-        // The provider owns the cached token: dispose it together with the client.
-        var auth = ClientCredentialsAuth.Create(new OidcOptions
+        // The provider caches and renews the token. The client does not dispose it: you own it, so dispose it
+        // after the client.
+        using var auth = ClientCredentialsAuth.Create(new OidcOptions
         {
             Issuer = "https://idp.example.com/realms/openshell",
             ClientId = "openshell-service",
@@ -85,13 +89,15 @@ internal static class Authentication
             Scopes = ["sandbox:read", "sandbox:write"],
         });
 
-        var client = new OpenShellClient(new OpenShellClientOptions
+        using var client = new OpenShellClient(new OpenShellClientOptions
         {
             Address = new Uri("https://gateway.example.com"),
             Auth = auth,
         });
+
+        var health = await client.Health.CheckAsync();
         #endregion
-        return client;
+        Console.WriteLine(health);
     }
 
     internal static async Task BrowserLoginAsync()

@@ -41,8 +41,10 @@ The wait helpers poll `GetAsync` with backoff until the sandbox reaches a phase,
 | --- | --- | --- |
 | `WaitReadyAsync` | `Ready` or `Completed` | `Error`, `Stopped`, `Suspending`, or `Suspended` |
 | `WaitStoppedAsync` | `Stopped` | `Error`, `Suspending`, or `Suspended` |
-| `WaitSuspendedAsync` | `Suspended` | `Error`, or any phase other than `Suspending` (the suspension did not happen or was undone) |
+| `WaitSuspendedAsync` | `Suspended` | `Error`, or any phase other than `Suspending`, `Unknown`, or `Unspecified` (the suspension did not happen or was undone) |
 | `WaitDeletedAsync` | the sandbox is gone, or its id differs from `ExpectedSandboxId` | |
+
+A wait that fails at once throws <xref:OpenShell.OpenShellException> with `Kind` `Conflict` (so `IsConflict` is true), and a message that names the phase, for example `sandbox 'agent-1' stopped before becoming ready`. `WaitSuspendedAsync` keeps polling while the phase is `Suspending`, and also while it is `Unknown` or `Unspecified`, which are treated as gaps in the reported status.
 
 Cancelling a wait through its `CancellationToken` throws `OperationCanceledException`.
 

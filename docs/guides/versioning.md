@@ -25,4 +25,4 @@ The assembly metadata `OpenShellUpstreamRelease` records the release, and `Healt
 
 ## Feature coverage
 
-[`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) tracks which gateway features the SDK covers, how each was tested, and how the SDK differs from the Go, Rust, TypeScript, and Python SDKs.
+[Feature parity](parity.md) summarizes which gateway features the SDK covers, how each was tested, and how the SDK differs from the Go, Rust, TypeScript, and Python SDKs; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full detail.

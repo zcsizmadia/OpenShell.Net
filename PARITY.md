@@ -104,9 +104,9 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Feature | Seen in | Status |
 |---|---|---|
 | Interfaces for every client area, for mocking | G | ✅ |
-| In-memory fake client (`OpenShell.Sdk.Testing`; 16 contract scenarios run against both the fake and the real client) | G | ✅ |
+| In-memory fake client (`OpenShell.Net.Testing`; 16 contract scenarios run against both the fake and the real client) | G | ✅ |
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
-| Shared conformance fixtures consumed by tests (`sdk/conformance/*.json`) | G T P | ✅ |
+| Shared conformance fixtures consumed by tests (`conformance/*.json`) | G T P | ✅ |
 | Unit tests on an in-memory gRPC invoker, on the net8.0, net10.0 and net11.0 runtimes (Linux and Windows CI) | G T P | ✅ |
 | Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, config and policy reads, policy draft review, providers and provider profiles, sandbox provider attach and detach, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection; provider credential export is checked only as a rejection (no operator certificate); provider refresh is not run (it needs a token endpoint) |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
@@ -115,11 +115,11 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 
 | Feature | Status |
 |---|---|
-| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE; `net8.0` and `net10.0` builds (apps on .NET 11 use `net10.0`) | ✅ packed in CI; not yet published. Consumer, AOT and API compatibility checks planned in #33 |
-| `OpenShell.Sdk.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
+| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE; `net8.0` and `net10.0` builds (apps on .NET 11 use `net10.0`) | ✅ packed in CI with package validation; every pull request restores the packages into a consumer app on each framework and publishes a Native AOT consumer (trim and AOT warnings fail). Not yet published; `PackageValidationBaselineVersion` (API compatibility against the last release) is set once v0.1.7 is on nuget.org (#33) |
+| `OpenShell.Net.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
-| README (overview, install, quick start) and documentation site: getting started, 17 guides, API reference (DocFX, GitHub Pages); every snippet compiled and most run against the fake in CI | ✅ |
+| README (overview, install, quick start) and documentation site: getting started, 18 guides (including a feature parity summary), API reference (DocFX, GitHub Pages); every snippet compiled and most run against the fake in CI | ✅ |
 | `scripts/ci.sh`, CI workflow (Linux and Windows) | ✅ runs on every pull request and on `main` |
 | nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ⚠️ written; first runs on the first release tag |
 | Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh` (optional files for fixtures newer than the release), drift check in CI | ✅ the drift check runs in CI and fails on script errors |

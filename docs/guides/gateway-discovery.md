@@ -27,13 +27,13 @@ By authentication mode (`auth_mode` in `metadata.json`), the client gets:
 | `oidc` | `Oidc` | The access token in `oidc_token.json`, renewed with its refresh token and written back. |
 | `cloudflare_jwt` | `CloudflareJwt` | The Access token in `edge_token` (or the legacy `cf_token`), through a local edge tunnel. |
 
-For an `https` endpoint, the `mtls` directory also supplies the trust: the CA in `mtls/ca.crt` when present, otherwise the system roots, and the client certificate when present.
+For an `https` endpoint, the `mtls` directory also supplies the trust and the client certificate: when `mtls/ca.crt` is present, only that CA is trusted, otherwise the system roots (see [Mutual TLS](authentication.md#mutual-tls)), and `mtls/tls.crt` with `mtls/tls.key` is sent when present. A bundle that is present but cannot be loaded throws `OpenShellException` with `Kind` `Tls`.
 
 ## Where registrations live
 
 | Location | Default | Holds |
 | --- | --- | --- |
-| User configuration directory | `$XDG_CONFIG_HOME/openshell`; otherwise `%APPDATA%\openshell` on Windows and `~/.config/openshell` elsewhere | `active_gateway`, and `gateways/<name>/` with `metadata.json` and the credentials |
+| User configuration directory | `$XDG_CONFIG_HOME/openshell` (a relative `$XDG_CONFIG_HOME` throws `OpenShellException` with `InvalidConfig`); otherwise `%APPDATA%\openshell` on Windows and `~/.config/openshell` elsewhere | `active_gateway`, and `gateways/<name>/` with `metadata.json` and the credentials |
 | System configuration directory | `$OPENSHELL_SYSTEM_GATEWAY_DIR` when it is an absolute path; otherwise `/etc/openshell` on Linux and macOS, and none on Windows | `active_gateway`, and `gateways/<name>/metadata.json` |
 
 The rules, as in the CLI:
@@ -65,7 +65,11 @@ The rules, as in the CLI:
 }
 ```
 
-`expires_at` is in Unix seconds. A token issued for another issuer or client id than the registration names is never sent. To sign in from .NET, see [Signing in to a registered gateway](authentication.md#signing-in-to-a-registered-gateway).
+`expires_at` is in Unix seconds. When the registration's `metadata.json` names both an issuer and a client id, a token whose file records another issuer or client id, or records neither, is never sent. When it names no issuer or no client id, there is nothing to check against: the stored token is sent as it is while it is valid, and it cannot be renewed.
+
+A connected client treats a token as expired 30 seconds before `expires_at`. Then, and when the gateway rejects it as `Unauthenticated`, the client reads the file again (another process may have renewed it) and otherwise renews the token with its refresh token, unless `GatewayConnectOptions.AutoRefresh` is off. With `WriteBack` on (the default), the renewed tokens are written back to `oidc_token.json`, atomically and owner-only on Linux and macOS, as `OidcLogin.LoginAsync` writes them. A write-back that fails is ignored: the renewed token is still used by this process, and the file keeps the old one.
+
+To sign in from .NET, see [Signing in to a registered gateway](authentication.md#signing-in-to-a-registered-gateway).
 
 ## Build the options yourself
 

@@ -15,6 +15,8 @@ SPDX-License-Identifier: Apache-2.0
 
 <xref:OpenShell.ExecOptions> sets the working directory, extra environment variables, standard input, a server-side execution timeout, a TTY, `NoLoginShell`, and an idempotency key (`RequestId`).
 
+Exec, including `RunAsync`, is a streaming call, so `OpenShellClientOptions.DefaultTimeout` does not bound it. Bound a command with `ExecOptions.Timeout` (enforced by the gateway) or a `CancellationToken`; the same holds for watches. See [Retries and timeouts](retries.md#timeouts).
+
 ### Python
 
 <xref:OpenShell.ExecPythonExtensions.ExecPythonAsync*> runs a Python source string with `python -c` (other SDKs send a pickled callable; .NET code cannot be pickled). `ExecPythonStreamAsync` streams instead.
@@ -35,7 +37,7 @@ SPDX-License-Identifier: Apache-2.0
 
 [!code-csharp[](../snippets/ExecAndStreaming.cs#Interactive)]
 
-Pass `allocateTty: false` for a pipe without a terminal. `CancelAsync` cancels the command and releases the stream, as disposing the session does.
+Pass `allocateTty: false` for a pipe without a terminal. `CancelAsync` cancels the command and releases the stream, as disposing the session does. Disposing does not wait for a stdin write that is blocked because the remote side is not reading: it cancels the write, which then throws `ObjectDisposedException` (or `OperationCanceledException` when the caller's own token cancelled it).
 
 ## Watch a sandbox
 
