@@ -37,7 +37,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Sandbox waits | `WaitReadyAsync`, `WaitStoppedAsync`, `WaitDeletedAsync` with `ExpectedSandboxId` | G R T P | ✅ |
 | Endpoint statuses and token-grant failure diagnostics (`Sandbox.EndpointStatuses`, `LastTokenGrantFailure`, `EndpointFailure`) | G | ✅ |
 | Sandbox watch and logs | `WatchAsync`, `WatchLogsAsync`, `GetLogsAsync`, cursor resume, reconnect with backoff | G R | ✅ |
-| Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ |
+| Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ attach, update, and detach with readiness waits run against a real sandbox in the Integration workflow |
 | Templates | create, get, list, delete | G R T P | ✅ |
 | Exec | `RunAsync`, `StreamAsync`, `InteractiveAsync` (stdin, resize, cancel), `ExecPythonAsync` | G R T P | ✅ |
 | Files | upload and download for files, streams, and directories (tar over exec) | G | ✅ needs `tar` and `sh` in the sandbox image; files, streams, and directories round-trip against a real sandbox in the Integration workflow |
@@ -45,10 +45,10 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | SSH | create and revoke session, `TunnelAsync` | G T | ✅ |
 | TCP | `ForwardAsync` (duplex stream), `ListenAsync` (local listener) | G T | ✅ |
 | Config | sandbox and gateway config, policy and setting updates, global scope | G T | ✅ |
-| Policy | draft get, approve, reject, approve all, edit, undo, clear, history, status, revisions | G | ✅ |
-| Providers | create, get, list (with label selector), update, delete, ensure | G P | ✅ |
-| Provider credentials | `GetCredentialsAsync` (operator-only, values redacted in `ToString`) | T P | ✅ |
-| Provider profiles | list, get, import, update, lint, delete, platform view; `StablePlaceholder` with a gateway support check (v0.1.7) | G | ✅ |
+| Policy | draft get, approve, reject, approve all, edit, undo, clear, history, status, revisions | G | ✅ the Integration workflow turns denied connections into mechanistic draft chunks and edits, approves (and waits for the revision to load), undoes, rejects, bulk-approves, and clears them |
+| Providers | create, get, list (with label selector), update, delete, ensure | G P | ✅ run against a real gateway in the Integration workflow |
+| Provider credentials | `GetCredentialsAsync` (operator-only, values redacted in `ToString`) | T P | ✅ the Integration workflow checks only the rejection: its mTLS client certificate is not an operator (`OU=operator`) identity |
+| Provider profiles | list, get, import, update, lint, delete, platform view; `StablePlaceholder` with a gateway support check (v0.1.7) | G | ✅ lint, import, update, delete, and the platform view run against a real gateway in the Integration workflow, which ships no built-in profiles |
 | Provider refresh | status, configure, rotate, delete | G | ✅ |
 | Rootfs staging | `BeginStagingAsync`, `StageAsync`, `RootfsDriverConfig.WithStagingToken` | none | ✅ |
 | Raw access | generated gRPC clients on `OpenShellClient.Raw` and `OpenShellClient.RawSandboxUpdates`; `SandboxSpec.RawSpec` hook | R T | ✅ |
@@ -108,7 +108,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
 | Shared conformance fixtures consumed by tests (`sdk/conformance/*.json`) | G T P | ✅ |
 | Unit tests on an in-memory gRPC invoker, on the net8.0, net10.0 and net11.0 runtimes (Linux and Windows CI) | G T P | ✅ |
-| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, config and policy reads, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection |
+| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, config and policy reads, policy draft review, providers and provider profiles, sandbox provider attach and detach, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection; provider credential export is checked only as a rejection (no operator certificate); provider refresh is not run (it needs a token endpoint) |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
 
 ## Packaging, docs, and CI
