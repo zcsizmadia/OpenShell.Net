@@ -33,14 +33,14 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Workspaces | create, get, list, delete, add/remove/list members, `InWorkspace(name)` scoped view | G R P | ✅ |
 | Sandboxes | create, create from template, get, list, list IDs, stop, start, delete (typed `DeletionResult`) | G R T P | ✅ |
 | Sandbox suspend and resume | `SuspendAsync`, `ResumeAsync` (`RestartIfRestoreFails`), `WaitSuspendedAsync`; Ready and Stopped waits fail fast on a suspended sandbox (v0.1.7) | G P | ✅ |
-| Sandbox configuration update | `UpdateAsync` (`SandboxUpdate` with null-versus-empty fields, compare-and-swap, request id), `ResumePendingUpdateAsync`; fake with pending updates (v0.1.7) | none: upstream SDKs have no curated method | ⚠️ unit tested; not run against a gateway with updates enabled |
+| Sandbox configuration update | `UpdateAsync` (`SandboxUpdate` with null-versus-empty fields, compare-and-swap, request id), `ResumePendingUpdateAsync`; fake with pending updates (v0.1.7) | none: upstream SDKs have no curated method | ✅ label updates and compare-and-swap run against a real gateway with updates enabled (Docker driver, Integration workflow); image, command, and environment changes need a driver that supports them (Kubernetes) and are not run |
 | Sandbox waits | `WaitReadyAsync`, `WaitStoppedAsync`, `WaitDeletedAsync` with `ExpectedSandboxId` | G R T P | ✅ |
 | Endpoint statuses and token-grant failure diagnostics (`Sandbox.EndpointStatuses`, `LastTokenGrantFailure`, `EndpointFailure`) | G | ✅ |
 | Sandbox watch and logs | `WatchAsync`, `WatchLogsAsync`, `GetLogsAsync`, cursor resume, reconnect with backoff | G R | ✅ |
 | Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ |
 | Templates | create, get, list, delete | G R T P | ✅ |
 | Exec | `RunAsync`, `StreamAsync`, `InteractiveAsync` (stdin, resize, cancel), `ExecPythonAsync` | G R T P | ✅ |
-| Files | upload and download for files, streams, and directories (tar over exec) | G | ⚠️ needs `tar` and `sh` in the sandbox image; not run against a real sandbox |
+| Files | upload and download for files, streams, and directories (tar over exec) | G | ✅ needs `tar` and `sh` in the sandbox image; files, streams, and directories round-trip against a real sandbox in the Integration workflow |
 | Services | expose, get, list, delete, service exposures at create | G R T P | ✅ |
 | SSH | create and revoke session, `TunnelAsync` | G T | ✅ |
 | TCP | `ForwardAsync` (duplex stream), `ListenAsync` (local listener) | G T | ✅ |
@@ -108,7 +108,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
 | Shared conformance fixtures consumed by tests (`sdk/conformance/*.json`) | G T P | ✅ |
 | Unit tests on an in-memory gRPC invoker, on the net8.0, net10.0 and net11.0 runtimes (Linux and Windows CI) | G T P | ✅ |
-| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ⚠️ written, skipped without a gateway, never run against a real one; CI job planned in #32 |
+| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, config and policy reads, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
 
 ## Packaging, docs, and CI
