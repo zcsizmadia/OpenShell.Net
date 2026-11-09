@@ -169,6 +169,8 @@ config="$workdir/gateway.toml"
 {
   printf '[openshell]\nversion = 2\n\n'
   printf '[openshell.gateway]\nlog_level = "info"\n'
+  # Lets the tests change a stopped sandbox in place (UpdateSandbox); upstream leaves it off by default.
+  printf 'enable_sandbox_updates = true\n'
   printf 'guest_tls_ca = %s\n\n' "$(toml_string "$pki/ca.crt")"
   printf '[openshell.gateway.gateway_jwt]\n'
   printf 'signing_key_path = %s\n' "$(toml_string "$jwt/signing.pem")"
@@ -190,7 +192,7 @@ cp "$config" "$log_dir/gateway.toml"
 
 # ── Start and wait for health ────────────────────────────────────────
 echo "Starting openshell-gateway $tag on 127.0.0.1:$port (namespace $namespace)..."
-XDG_STATE_HOME="$workdir/state" XDG_CONFIG_HOME="$workdir/config" XDG_DATA_HOME="$workdir/data" \
+NO_COLOR=1 XDG_STATE_HOME="$workdir/state" XDG_CONFIG_HOME="$workdir/config" XDG_DATA_HOME="$workdir/data" \
   "$gateway_bin" \
   --config "$config" \
   --bind-address 127.0.0.1 \
