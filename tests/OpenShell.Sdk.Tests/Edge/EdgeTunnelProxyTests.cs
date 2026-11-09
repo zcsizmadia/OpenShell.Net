@@ -29,23 +29,25 @@ public class EdgeTunnelUrlTests
     }
 
     [Test]
-    [Arguments("http://gw.example.com")]
-    [Arguments("ws://gw.example.com/x")]
-    [Arguments("ftp://gw.example.com")]
-    [Arguments("/relative")]
-    [Arguments("wss://user:pw@gw.example.com/x")]
-    public async Task Unsafe_or_invalid_endpoints_are_rejected(string input)
+    [Arguments("http://gw.example.com", "an edge token requires wss:// (ws:// is allowed only for loopback hosts)")]
+    [Arguments("ws://gw.example.com/x", "an edge token requires wss:// (ws:// is allowed only for loopback hosts)")]
+    [Arguments("ftp://gw.example.com", "gateway URL must use http, https, ws or wss")]
+    [Arguments("/relative", "gateway URL must be an absolute URL with a host")]
+    [Arguments("wss://user:pw@gw.example.com/x", "gateway URL must not contain credentials")]
+    public async Task Unsafe_or_invalid_endpoints_are_rejected(string input, string message)
     {
         var ex = await Assert.That(() => EdgeTunnelProxy.ToTunnelUrl(input)).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).IsEqualTo(message);
     }
 
     [Test]
     public async Task Start_validates_arguments_and_token_safety()
     {
         await Assert.That(() => EdgeTunnelProxy.Start("", "token")).Throws<ArgumentException>();
-        await Assert.That(() => EdgeTunnelProxy.Start("https://gw.example.com", " ")).Throws<ArgumentException>();
+        var blank = await Assert.That(() => EdgeTunnelProxy.Start("https://gw.example.com", " ")).Throws<ArgumentException>();
+        await Assert.That(blank!.ParamName).IsEqualTo("edgeToken");
         await Assert.That(() => EdgeTunnelProxy.Start("https://gw.example.com", "a;b")).Throws<OpenShellException>();
         await Assert.That(() => EdgeTunnelProxy.Start("http://remote.example.com", "token")).Throws<OpenShellException>();
     }
@@ -89,6 +91,7 @@ public class EdgeTunnelProxyTests
         }
     }
 
+    // Endpoints stay on loopback: a mutant that bypasses the test connector must not dial a real host.
     private static EdgeTunnelProxy StartProxy(EdgeTunnelOptions options, string endpoint = "http://127.0.0.1:9") =>
         EdgeTunnelProxy.Start(endpoint, "edge.jwt-token", options);
 
@@ -130,7 +133,7 @@ public class EdgeTunnelProxyTests
     public async Task Echoes_data_and_sends_edge_credentials_to_the_connector()
     {
         var seen = new List<(Uri Url, IReadOnlyDictionary<string, string> Headers)>();
-        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = InMemoryEcho(seen) }, "https://gw.example.com");
+        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = InMemoryEcho(seen) }, "https://127.0.0.1:9/base");
         using var client = await ConnectAsync(proxy);
         var stream = client.GetStream();
 
@@ -139,7 +142,7 @@ public class EdgeTunnelProxyTests
 
         await Assert.That(Encoding.UTF8.GetString(echoed)).IsEqualTo("hello tunnel");
         var (url, headers) = seen.Single();
-        await Assert.That(url.AbsoluteUri).IsEqualTo("wss://gw.example.com/_ws_tunnel");
+        await Assert.That(url.AbsoluteUri).IsEqualTo("wss://127.0.0.1:9/base/_ws_tunnel");
         await Assert.That(headers["cf-access-jwt-assertion"]).IsEqualTo("edge.jwt-token");
         await Assert.That(headers["Cookie"]).IsEqualTo("CF_Authorization=edge.jwt-token");
     }
@@ -191,11 +194,14 @@ public class EdgeTunnelProxyTests
     }
 
     [Test]
-    public async Task Server_close_ends_the_local_connection()
+    public async Task Server_close_ends_the_local_connection_and_disposes_the_websocket()
     {
+        var logger = new ListLogger();
+        InMemoryWebSocket? tunnel = null;
         var connector = new WebSocketConnector((_, _, ct) =>
         {
             var (client, server) = InMemoryWebSocket.CreatePair();
+            tunnel = client;
             _ = Task.Run(async () =>
             {
                 var buffer = new byte[16];
@@ -204,14 +210,77 @@ public class EdgeTunnelProxyTests
             }, ct);
             return ValueTask.FromResult<WebSocket>(client);
         });
-        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector });
+        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger });
         using var client = await ConnectAsync(proxy);
         var stream = client.GetStream();
 
         await stream.WriteAsync(new byte[] { 1 });
         var read = await stream.ReadAsync(new byte[8]).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await proxy.DisposeAsync();
 
         await Assert.That(read).IsEqualTo(0);
+        await Assert.That(tunnel!.State).IsEqualTo(WebSocketState.Closed);
+
+        // The upload side is cancelled once the server closed; that teardown is not a failure.
+        await Assert.That(logger.Entries.Any(e => e.Level >= LogLevel.Information)).IsFalse();
+    }
+
+    /// <summary>A tunnel WebSocket whose sends fail; everything else goes to an in-memory peer that never answers.</summary>
+    private sealed class FailingSendWebSocket : WebSocket
+    {
+        private readonly InMemoryWebSocket _inner = InMemoryWebSocket.CreatePair().Client;
+
+        public bool Disposed { get; private set; }
+
+        public override WebSocketCloseStatus? CloseStatus => _inner.CloseStatus;
+
+        public override string? CloseStatusDescription => _inner.CloseStatusDescription;
+
+        public override WebSocketState State => _inner.State;
+
+        public override string? SubProtocol => _inner.SubProtocol;
+
+        public override void Abort() => _inner.Abort();
+
+        public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) =>
+            _inner.CloseAsync(closeStatus, statusDescription, cancellationToken);
+
+        public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) =>
+            _inner.CloseOutputAsync(closeStatus, statusDescription, cancellationToken);
+
+        public override void Dispose()
+        {
+            Disposed = true;
+            _inner.Dispose();
+        }
+
+        public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) =>
+            _inner.ReceiveAsync(buffer, cancellationToken);
+
+        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) =>
+            Task.FromException(new IOException("send failed"));
+    }
+
+    [Test]
+    public async Task Failed_upload_ends_the_tunnel_without_waiting_for_the_server()
+    {
+        var logger = new ListLogger();
+        var tunnel = new FailingSendWebSocket();
+        var connector = new WebSocketConnector((_, _, _) => ValueTask.FromResult<WebSocket>(tunnel));
+        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromSeconds(30) });
+        using var client = await ConnectAsync(proxy);
+        var stream = client.GetStream();
+
+        // The failed send ends the upload; the download must be cut too instead of waiting for a server that never answers.
+        await stream.WriteAsync(new byte[] { 1 });
+        var read = await stream.ReadAsync(new byte[8]).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+        await proxy.DisposeAsync();
+
+        await Assert.That(read).IsEqualTo(0);
+        await Assert.That(tunnel.Disposed).IsTrue();
+
+        // The send failure and the cancelled download are teardown, not a connection failure.
+        await Assert.That(logger.Entries.Any(e => e.Level >= LogLevel.Information)).IsFalse();
     }
 
     [Test]
@@ -439,12 +508,15 @@ public class EdgeTunnelProxyTests
     [Test]
     public async Task Default_connector_failure_closes_the_local_connection()
     {
+        var logger = new ListLogger();
         var deadPort = TestPorts.Free();
-        await using var proxy = EdgeTunnelProxy.Start($"http://127.0.0.1:{deadPort}", "edge.jwt-token", new EdgeTunnelOptions { ConnectTimeout = TimeSpan.FromSeconds(5) });
+        var proxy = EdgeTunnelProxy.Start($"http://127.0.0.1:{deadPort}", "edge.jwt-token", new EdgeTunnelOptions { ConnectTimeout = TimeSpan.FromSeconds(5), Logger = logger });
         using var client = await ConnectAsync(proxy);
 
         var read = await client.GetStream().ReadAsync(new byte[8]).AsTask().WaitAsync(TimeSpan.FromSeconds(20));
+        await proxy.DisposeAsync();
 
         await Assert.That(read).IsEqualTo(0);
+        await Assert.That(logger.Entries.Single().Message).IsEqualTo("Edge tunnel connection failed: WebSocketException");
     }
 }
