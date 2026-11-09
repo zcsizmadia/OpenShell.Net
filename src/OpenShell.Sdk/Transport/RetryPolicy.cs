@@ -164,8 +164,10 @@ internal sealed partial class RetryCallInvoker(
             delay = suggested;
         }
 
-        // Never retry past the caller's own deadline.
-        return options.Deadline is not { } deadline || time.GetUtcNow().UtcDateTime + delay < deadline;
+        // Never retry past the caller's own deadline. gRPC deadlines are wall-clock instants that the transport enforces
+        // in real time (ClientCore sets them from DateTime.UtcNow), so they are compared against the real clock, not
+        // the injected TimeProvider, which only paces the backoff.
+        return options.Deadline is not { } deadline || DateTime.UtcNow + delay < deadline;
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Retrying {Method} (attempt {Attempt} of {MaxAttempts}) in {DelayMs} ms after {Status}")]

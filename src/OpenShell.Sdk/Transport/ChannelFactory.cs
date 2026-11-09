@@ -97,7 +97,8 @@ internal static class ChannelFactory
     }
 
     /// <summary>
-    /// Accepts the server certificate when it chains to one of the pinned <paramref name="roots"/>. The intermediates
+    /// Accepts the server certificate only when it chains to one of the pinned <paramref name="roots"/>, which replace
+    /// the system roots: a certificate the platform trusts through a system root is still rejected. The intermediates
     /// the server sent (carried by <paramref name="presented"/>) help build the chain but are never trusted on their
     /// own: the chain must still end in a pinned root.
     /// </summary>
@@ -109,15 +110,11 @@ internal static class ChannelFactory
             return false;
         }
 
-        // Name mismatch is never excusable; chain errors are re-evaluated against the pinned roots.
+        // Name mismatch is never excusable. The platform's chain verdict is ignored either way: it was built against
+        // the system roots, and the pinned roots replace them, so the chain is always rebuilt against the pins.
         if ((errors & (SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)
         {
             return false;
-        }
-
-        if (errors == SslPolicyErrors.None)
-        {
-            return true;
         }
 
         using var chain = new X509Chain();
