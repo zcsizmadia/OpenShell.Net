@@ -64,7 +64,7 @@ public sealed class ForwardStream : Stream
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            var call = await ClientCore.OpenDuplexAsync(
+            var call = await core.OpenDuplexAsync(
                 headers => core.Grpc.ForwardTcp(new CallOptions(headers: headers, cancellationToken: cts.Token)),
                 new Wire.TcpForwardFrame { Init = init },
                 replica,

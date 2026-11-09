@@ -697,6 +697,129 @@ public class FileDownloadTests
     }
 
     [Test]
+    [Arguments("a:b")] // NTFS alternate data stream.
+    [Arguments("file.txt:Zone.Identifier")]
+    [Arguments("::$DATA")]
+    [Arguments("CON")]
+    [Arguments("con")]
+    [Arguments("Con.txt")]
+    [Arguments("con .tar.gz")]
+    [Arguments("PRN")]
+    [Arguments("aux.c")]
+    [Arguments("NUL")]
+    [Arguments("nul.anything.here")]
+    [Arguments("COM1")]
+    [Arguments("com9.log")]
+    [Arguments("COM0")]
+    [Arguments("LPT1")]
+    [Arguments("lpt9.txt")]
+    [Arguments("COM¹")]
+    [Arguments("LPT³.x")]
+    [Arguments("CONIN$")]
+    [Arguments("conout$.txt")]
+    [Arguments("trailing.")]
+    [Arguments("trailing ")]
+    [Arguments("...")]
+    [Arguments("a<b")]
+    [Arguments("a>b")]
+    [Arguments("a\"b")]
+    [Arguments("a|b")]
+    [Arguments("a?b")]
+    [Arguments("a*b")]
+    [Arguments("tab\there")]
+    public async Task Windows_unsafe_segments_are_recognized(string segment)
+    {
+        await Assert.That(FileClient.IsUnsafeWindowsSegment(segment)).IsTrue();
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments(".")]
+    [Arguments("file.txt")]
+    [Arguments(".hidden")]
+    [Arguments("CONSOLE")]
+    [Arguments("icon")]
+    [Arguments("con_file.txt")]
+    [Arguments("CONIN")]
+    [Arguments("COM")]
+    [Arguments("COM10")]
+    [Arguments("LPTX")]
+    [Arguments("NULL.txt")]
+    [Arguments("auxiliary")]
+    [Arguments(" leading-space")]
+    [Arguments("a b.c")]
+    public async Task Ordinary_segments_are_not_flagged_as_Windows_unsafe(string segment)
+    {
+        await Assert.That(FileClient.IsUnsafeWindowsSegment(segment)).IsFalse();
+    }
+
+    [Test]
+    [Arguments("a:b")]
+    [Arguments("dir/file.txt:stream")]
+    [Arguments("dir/CON")]
+    [Arguments("CON/file.txt")]
+    [Arguments("dir/nul.txt")]
+    [Arguments(@"dir\COM1.log")]
+    [Arguments("dir/lpt1")]
+    [Arguments("dir./file.txt")]
+    [Arguments("dir /file.txt")]
+    [Arguments("a/b?c")]
+    public async Task SafeTarget_rejects_alternate_streams_and_device_names_on_Windows(string name)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip.Test("Windows-only file name rules");
+        }
+
+        var root = Path.GetFullPath(Path.Join(Path.GetTempPath(), "safe-root"));
+
+        await Assert.That(() => FileClient.SafeTarget(root, name)).Throws<InvalidDataException>();
+    }
+
+    [Test]
+    [Arguments("a:b")]
+    [Arguments("dir/file.txt:stream")]
+    [Arguments("dir/CON")]
+    [Arguments("dir/nul.txt")]
+    [Arguments("dir./file.txt")]
+    [Arguments("a/b?c")]
+    public async Task SafeTarget_accepts_names_that_are_valid_on_Unix(string name)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip.Test("these names are only valid off Windows");
+        }
+
+        var root = Path.GetFullPath(Path.Join(Path.GetTempPath(), "safe-root"));
+
+        await Assert.That(FileClient.SafeTarget(root, name)).IsEqualTo(Path.Join(root, name));
+    }
+
+    [Test]
+    public async Task Download_directory_refuses_an_alternate_data_stream_entry_on_Windows()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip.Test("Windows-only file name rules");
+        }
+
+        var archive = await Tar.BuildAsync(Tar.File("ok.txt", "fine"), ("ok.txt:hidden", "x", TarEntryType.RegularFile, null));
+        using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
+        var root = TempPath("tree");
+        try
+        {
+            var ex = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+            await Assert.That(ex!.Message).Contains("unsafe tar entry name");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(root, "ok.txt"))).IsEqualTo("fine");
+            await Assert.That(File.Exists(Path.Join(root, "ok.txt:hidden"))).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(root)!, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task ExecStdoutStream_handles_edge_cases()
     {
         var invoker = new FakeCallInvoker().Stream<Wire.ExecSandboxRequest, Wire.ExecSandboxEvent>("ExecSandbox", _ =>

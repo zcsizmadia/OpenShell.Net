@@ -165,11 +165,9 @@ internal sealed class FakeFileClient(FakeGateway gateway, string workspace) : IF
         foreach (var (path, content) in files)
         {
             var relative = path[(remoteRoot.Length + 1)..];
-            var target = Path.GetFullPath(Path.Join(root, relative));
-            if (!target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            {
-                throw new InvalidDataException($"unsafe tar entry name '{relative}'");
-            }
+            // The real client's check, including the Windows-only rules for alternate data streams and device names.
+            var target = FileClient.SafeTarget(root, relative)
+                ?? throw new InvalidDataException($"unsafe tar entry name '{relative}'");
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             await File.WriteAllBytesAsync(target, content, cancellationToken).ConfigureAwait(false);

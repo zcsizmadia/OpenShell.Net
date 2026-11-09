@@ -98,6 +98,72 @@ public class RootfsClientTests
 
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidArgument);
             await Assert.That(ex.Message).Contains("exceeds");
+            await Assert.That(File.Exists(Path.Join(dir, "out.tar"))).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task Exceeding_the_limit_after_writing_removes_the_partial_archive()
+    {
+        var dir = TempDir();
+        try
+        {
+            // Larger than one copy buffer, so part of the archive is written before the limit trips.
+            var source = Path.Join(dir, "big.tar");
+            await File.WriteAllBytesAsync(source, new byte[300_000]);
+            var target = Path.Join(dir, "out.tar");
+
+            await Assert.That(async () => await RootfsClient.CopyWithLimitAsync(source, target, 100_000, CancellationToken.None))
+                .Throws<OpenShellException>();
+
+            await Assert.That(File.Exists(target)).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task A_cancelled_copy_removes_the_partial_archive()
+    {
+        var dir = TempDir();
+        try
+        {
+            var source = Path.Join(dir, "root.tar");
+            await File.WriteAllBytesAsync(source, new byte[1000]);
+            var target = Path.Join(dir, "out.tar");
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            await Assert.That(async () => await RootfsClient.CopyWithLimitAsync(source, target, 0, cts.Token))
+                .Throws<OperationCanceledException>();
+
+            await Assert.That(File.Exists(target)).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task A_missing_source_leaves_an_existing_destination_alone()
+    {
+        var dir = TempDir();
+        try
+        {
+            var target = Path.Join(dir, "out.tar");
+            await File.WriteAllTextAsync(target, "keep");
+
+            await Assert.That(async () => await RootfsClient.CopyWithLimitAsync(Path.Join(dir, "missing.tar"), target, 0, CancellationToken.None))
+                .Throws<FileNotFoundException>();
+
+            await Assert.That(await File.ReadAllTextAsync(target)).IsEqualTo("keep");
         }
         finally
         {
