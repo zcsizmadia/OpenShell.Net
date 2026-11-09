@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+name: Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Nightly, so a regression against the pinned upstream gateway or its images shows up without a push.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  gateway:
+    name: Real gateway (Docker driver)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same runtimes as ci.yml: one per target framework, the newest SDK builds everything.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
+
+      - name: Build
+        run: scripts/ci.sh build
+
+      # Starts the openshell-gateway release binary for UPSTREAM_VERSION with the Docker compute driver
+      # and the matching GHCR supervisor and sandbox images, then runs the integration tests against it.
+      - name: Integration tests against a real gateway
+        run: scripts/integration-gateway.sh scripts/ci.sh integration
+
+      - name: Upload gateway and sandbox logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-gateway-logs
+          path: TestResults/integration-gateway
+          retention-days: 7

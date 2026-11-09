@@ -44,8 +44,8 @@ internal static class GatewayFixture
         });
     }
 
-    /// <summary>A unique, DNS-safe sandbox name for one test run.</summary>
-    public static string UniqueName(string prefix) => $"{prefix}-{Random.Shared.Next(100_000_000, 999_999_999)}";
+    /// <summary>A unique, DNS-safe sandbox name for one test run. Keep the prefix short: the gateway caps names at 19 characters.</summary>
+    public static string UniqueName(string prefix) => $"{prefix}-{Random.Shared.Next(0x100000, 0x1000000):x6}";
 
     private static TlsOptions? BuildTls()
     {
