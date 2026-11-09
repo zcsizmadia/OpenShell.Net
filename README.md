@@ -421,9 +421,11 @@ Write your own code against `IOpenShellClient` and its per-area interfaces, such
 Protobuf bindings are generated at build time from the repository `proto/` directory and are never committed. You need the .NET 11 SDK and the .NET 8 and .NET 10 runtimes. From the repository root, in Bash (Git Bash on Windows):
 
 ```shell
-scripts/ci.sh            # format check, build, unit tests on every framework, coverage summary, pack
-scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack
+scripts/ci.sh            # format check, build, unit tests on every framework, coverage summary, pack, smoke
+scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack, smoke, aot
 ```
+
+`smoke` restores the freshly packed packages into a small consumer app under `tests/package-smoke/` and runs it on every framework. `aot` publishes another consumer with Native AOT, failing on any trim or AOT warning, and runs it; it needs the platform's native toolchain (clang on Linux, the Visual Studio C++ tools on Windows). Packing runs NuGet package validation.
 
 The integration tests run against a real gateway and skip unless `OPENSHELL_GATEWAY_ADDRESS` is set (see `tests/OpenShell.Sdk.IntegrationTests/GatewayFixture.cs` for the token, CA, and mTLS variables).
 

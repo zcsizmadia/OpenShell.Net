@@ -11,3 +11,7 @@ obj/
 # Keep the SDK source directory Rootfs/ tracked even if a global `rootfs/` ignore rule
 # matches it on a case-insensitive file system.
 !Rootfs/
+
+# Package smoke tests (scripts/ci.sh smoke and aot).
+tests/package-smoke/.packages/
+tests/package-smoke/.aot/

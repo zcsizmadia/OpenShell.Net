@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+    SPDX-License-Identifier: Apache-2.0
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0;net11.0</TargetFrameworks>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="OpenShell.Net" Version="$(OpenShellPackageVersion)" />
+    <PackageReference Include="OpenShell.Net.DependencyInjection" Version="$(OpenShellPackageVersion)" />
+    <PackageReference Include="OpenShell.Net.Testing" Version="$(OpenShellPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+</Project>
