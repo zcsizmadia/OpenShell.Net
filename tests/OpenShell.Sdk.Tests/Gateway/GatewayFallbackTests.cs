@@ -25,7 +25,7 @@ public class GatewayFallbackTests
         });
 
     private static void WriteActive(TempDirectory root, string area, string text) =>
-        File.WriteAllText(Path.Combine(root.Make(area), "active_gateway"), text);
+        File.WriteAllText(Path.Join(root.Make(area), "active_gateway"), text);
 
     [Test]
     public async Task The_system_active_gateway_is_used_when_the_user_has_none()
@@ -72,15 +72,15 @@ public class GatewayFallbackTests
         var ex = await Assert.That(() => Locator(root).ResolveActiveName()).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
-        await Assert.That(ex.Message).Contains(Path.Combine(root.Combine("user"), "active_gateway") + " is empty");
-        await Assert.That(ex.Message).Contains(Path.Combine(root.Combine("sys"), "active_gateway") + " names an invalid gateway");
+        await Assert.That(ex.Message).Contains(Path.Join(root.Combine("user"), "active_gateway") + " is empty");
+        await Assert.That(ex.Message).Contains(Path.Join(root.Combine("sys"), "active_gateway") + " names an invalid gateway");
     }
 
     [Test]
     public async Task An_unreadable_active_gateway_file_is_reported()
     {
         using var root = new TempDirectory();
-        Directory.CreateDirectory(Path.Combine(root.Make("user"), "active_gateway"));
+        Directory.CreateDirectory(Path.Join(root.Make("user"), "active_gateway"));
 
         var ex = await Assert.That(() => Locator(root).ResolveActiveName()).Throws<OpenShellException>();
 
@@ -152,7 +152,7 @@ public class GatewayFallbackTests
         using var root = new TempDirectory();
         var system = root.Make("sys");
         var state = root.Make("state");
-        await File.WriteAllTextAsync(Path.Combine(state, "edge_token"), "edge.jwt");
+        await File.WriteAllTextAsync(Path.Join(state, "edge_token"), "edge.jwt");
         var edge = new GatewayMetadata
         {
             Name = "corp",
@@ -170,15 +170,11 @@ public class GatewayFallbackTests
         OidcTokenFile.Write(state, new OidcTokens("oidc-token", ExpiresAt: DateTimeOffset.UtcNow.AddHours(1)), "https://idp.example.com", "cli");
         var oidc = edge with { AuthMode = GatewayAuthMode.Oidc, OidcIssuer = "https://idp.example.com", OidcClientId = "cli" };
         var auth = GatewayClient.CreateOptions(oidc, new GatewayConnectOptions { TimeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow) }).Auth;
-        try
+        using (auth as IDisposable)
         {
             using var second = new HttpRequestMessage(HttpMethod.Post, "https://gw.example.com/x");
             await auth.ApplyAsync(second, CancellationToken.None);
             await Assert.That(second.Headers.Authorization!.Parameter).IsEqualTo("oidc-token");
-        }
-        finally
-        {
-            (auth as IDisposable)?.Dispose();
         }
 
         await Assert.That(Directory.GetFileSystemEntries(system).Length).IsEqualTo(0);

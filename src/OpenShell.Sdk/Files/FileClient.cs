@@ -133,7 +133,7 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
         var fullPath = Path.GetFullPath(localPath);
         var parent = Path.GetDirectoryName(fullPath)!;
         Directory.CreateDirectory(parent);
-        var temp = Path.Combine(parent, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.partial");
+        var temp = Path.Join(parent, $".{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.partial");
         try
         {
             var file = new FileStream(temp, new FileStreamOptions
@@ -311,7 +311,7 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
             }
         }
 
-        var full = Path.GetFullPath(Path.Combine(root, entryName));
+        var full = Path.GetFullPath(Path.Join(root, entryName));
         var rootWithSeparator = Path.EndsInDirectorySeparator(root) ? root : root + Path.DirectorySeparatorChar;
         var isRoot = string.Equals(
             full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
@@ -531,6 +531,7 @@ internal sealed class ExecStdoutStream(IAsyncEnumerator<ExecEvent> events) : Str
         var scratch = new byte[4096];
         while (await ReadAsync(scratch, cancellationToken).ConfigureAwait(false) > 0)
         {
+            // Discard: only the end of the stream and the exit code matter.
         }
     }
 

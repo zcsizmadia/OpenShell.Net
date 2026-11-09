@@ -106,6 +106,7 @@ public class LoggingTests
 
         await foreach (var _ in client.Watch.WatchAsync("sb"))
         {
+            // Drain the stream; the test checks what was logged.
         }
 
         await Assert.That(calls).IsEqualTo(2);

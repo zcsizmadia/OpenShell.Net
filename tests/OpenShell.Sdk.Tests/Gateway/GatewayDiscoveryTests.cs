@@ -62,7 +62,7 @@ public class GatewayDiscoveryTests
         GatewayLocatorTests.Register(root, "user", "192.0.2.1", Metadata);
         GatewayLocatorTests.Register(root, "user", "with space", Metadata);
         GatewayLocatorTests.Register(root, "user", "foo..bar", Metadata);
-        File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "gw.example.com\n");
+        File.WriteAllText(Path.Join(root.Make("user"), "active_gateway"), "gw.example.com\n");
         var locator = Locator(root, systemOverride: root.Combine("none"));
 
         await Assert.That(locator.ResolveActiveName()).IsEqualTo("gw.example.com");
@@ -79,7 +79,7 @@ public class GatewayDiscoveryTests
     public async Task An_active_gateway_with_a_device_name_is_rejected()
     {
         using var root = new TempDirectory();
-        File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "COM1.example.com");
+        File.WriteAllText(Path.Join(root.Make("user"), "active_gateway"), "COM1.example.com");
 
         var ex = await Assert.That(() => Locator(root).ResolveActiveName()).Throws<OpenShellException>();
 

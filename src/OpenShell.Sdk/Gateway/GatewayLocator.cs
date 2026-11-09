@@ -56,13 +56,13 @@ public sealed class GatewayLocator
             if (_env("XDG_CONFIG_HOME") is { Length: > 0 } xdg)
             {
                 return Path.IsPathRooted(xdg)
-                    ? Path.Combine(xdg, AppName)
+                    ? Path.Join(xdg, AppName)
                     : throw new OpenShellException(OpenShellErrorKind.InvalidConfig, "XDG_CONFIG_HOME must be an absolute path");
             }
 
             if (OperatingSystem.IsWindows() && _env("APPDATA") is { Length: > 0 } appData)
             {
-                return Path.Combine(appData, AppName);
+                return Path.Join(appData, AppName);
             }
 
             var home = _env(OperatingSystem.IsWindows() ? "USERPROFILE" : "HOME");
@@ -73,7 +73,7 @@ public sealed class GatewayLocator
 
             return string.IsNullOrEmpty(home)
                 ? throw new OpenShellException(OpenShellErrorKind.InvalidConfig, "cannot determine home directory")
-                : Path.Combine(home, ".config", AppName);
+                : Path.Join(home, ".config", AppName);
         }
     }
 
@@ -114,7 +114,7 @@ public sealed class GatewayLocator
 
         foreach (var name in ListDirectories(UserConfigDirectory))
         {
-            var directory = Path.Combine(UserConfigDirectory, GatewaySubdir, name);
+            var directory = Path.Join(UserConfigDirectory, GatewaySubdir, name);
             if (HasMetadata(directory) && seen.Add(name) && IsReadable(name, directory, GatewayConfigSource.User))
             {
                 result.Add(new GatewayEntry(name, name == active, GatewayConfigSource.User));
@@ -125,7 +125,7 @@ public sealed class GatewayLocator
         {
             foreach (var name in ListDirectories(system))
             {
-                var directory = Path.Combine(system, GatewaySubdir, name);
+                var directory = Path.Join(system, GatewaySubdir, name);
                 if (seen.Add(name) && IsReadable(name, directory, GatewayConfigSource.System))
                 {
                     result.Add(new GatewayEntry(name, name == active, GatewayConfigSource.System));
@@ -151,12 +151,12 @@ public sealed class GatewayLocator
         }
 
         var problems = new List<string>();
-        if (ReadActiveFile(Path.Combine(UserConfigDirectory, ActiveGatewayFile), problems) is { } user)
+        if (ReadActiveFile(Path.Join(UserConfigDirectory, ActiveGatewayFile), problems) is { } user)
         {
             return user;
         }
 
-        if (SystemConfigDirectory is { } system && ReadActiveFile(Path.Combine(system, ActiveGatewayFile), problems) is { } fromSystem)
+        if (SystemConfigDirectory is { } system && ReadActiveFile(Path.Join(system, ActiveGatewayFile), problems) is { } fromSystem)
         {
             return fromSystem;
         }
@@ -282,9 +282,9 @@ public sealed class GatewayLocator
         }
     }
 
-    private string UserGatewayDirectory(string name) => Path.Combine(UserConfigDirectory, GatewaySubdir, name);
+    private string UserGatewayDirectory(string name) => Path.Join(UserConfigDirectory, GatewaySubdir, name);
 
-    private static bool HasMetadata(string directory) => File.Exists(Path.Combine(directory, MetadataFile));
+    private static bool HasMetadata(string directory) => File.Exists(Path.Join(directory, MetadataFile));
 
     private static bool IsReadable(string name, string directory, GatewayConfigSource source)
     {
@@ -313,7 +313,7 @@ public sealed class GatewayLocator
 
         if (SystemConfigDirectory is { } system)
         {
-            var sys = Path.Combine(system, GatewaySubdir, name);
+            var sys = Path.Join(system, GatewaySubdir, name);
             if (HasMetadata(sys))
             {
                 return (sys, GatewayConfigSource.System);
@@ -347,7 +347,7 @@ public sealed class GatewayLocator
     {
         try
         {
-            return JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(directory, MetadataFile)), SdkJsonContext.Default.GatewayMetadataDto);
+            return JsonSerializer.Deserialize(File.ReadAllText(Path.Join(directory, MetadataFile)), SdkJsonContext.Default.GatewayMetadataDto);
         }
         catch (JsonException e)
         {
@@ -376,7 +376,7 @@ public sealed class GatewayLocator
 
     private static List<string> ListDirectories(string baseDirectory)
     {
-        var root = Path.Combine(baseDirectory, GatewaySubdir);
+        var root = Path.Join(baseDirectory, GatewaySubdir);
         var names = new List<string>();
         if (!Directory.Exists(root))
         {

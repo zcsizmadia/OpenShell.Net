@@ -361,6 +361,7 @@ internal sealed class FakeCallInvoker : CallInvoker
             }
             catch (Exception e)
             {
+                // Whatever the scripted session throws is handed to the client as the call's failure.
                 fault = e;
             }
             finally

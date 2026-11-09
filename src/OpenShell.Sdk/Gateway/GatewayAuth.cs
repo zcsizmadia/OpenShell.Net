@@ -22,8 +22,8 @@ internal sealed class LazyEdgeAuth(string directory) : IAuthProvider
 
     internal static string ReadToken(string directory)
     {
-        var primary = Path.Combine(directory, "edge_token");
-        var legacy = Path.Combine(directory, "cf_token");
+        var primary = Path.Join(directory, "edge_token");
+        var legacy = Path.Join(directory, "cf_token");
         var path = (File.Exists(primary) ? primary : File.Exists(legacy) ? legacy : null) ?? throw new OpenShellException(OpenShellErrorKind.Auth, "neither edge_token nor cf_token found in gateway directory");
 
         string token;

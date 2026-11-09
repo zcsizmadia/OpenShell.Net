@@ -35,7 +35,7 @@ internal static class OidcTokenFile
     /// <summary>Reads the cached bundle regardless of expiry; null when absent or without an access token.</summary>
     public static StoredOidcToken? Read(string directory)
     {
-        var path = Path.Combine(directory, FileName);
+        var path = Path.Join(directory, FileName);
         string text;
         try
         {
@@ -110,8 +110,8 @@ internal static class OidcTokenFile
             ClientId = clientId,
         };
 
-        var path = Path.Combine(directory, FileName);
-        var temp = Path.Combine(directory, $".oidc-token-{Guid.NewGuid():N}.tmp");
+        var path = Path.Join(directory, FileName);
+        var temp = Path.Join(directory, $".oidc-token-{Guid.NewGuid():N}.tmp");
         try
         {
             Directory.CreateDirectory(directory);

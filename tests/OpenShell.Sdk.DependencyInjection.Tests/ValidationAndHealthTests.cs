@@ -57,7 +57,7 @@ public class ValidationTests
     [Test]
     public async Task Missing_certificate_file_fails_validation_without_leaking_paths_or_contents()
     {
-        var failure = Resolve(o => { o.Address = new Uri("https://g.example.com"); o.CaCertificatePath = Path.Combine(Path.GetTempPath(), "nope-" + Guid.NewGuid().ToString("N") + ".pem"); });
+        var failure = Resolve(o => { o.Address = new Uri("https://g.example.com"); o.CaCertificatePath = Path.Join(Path.GetTempPath(), "nope-" + Guid.NewGuid().ToString("N") + ".pem"); });
 
         await Assert.That(failure!.Message).Contains("certificate could not be loaded");
     }
@@ -65,15 +65,15 @@ public class ValidationTests
     [Test]
     public async Task Pem_certificates_load_into_tls_options()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "openshell-di-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "openshell-di-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
             using var key = ECDsa.Create();
             var request = new CertificateRequest("CN=test", key, HashAlgorithmName.SHA256);
             using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
-            var certPath = Path.Combine(dir, "cert.pem");
-            var keyPath = Path.Combine(dir, "key.pem");
+            var certPath = Path.Join(dir, "cert.pem");
+            var keyPath = Path.Join(dir, "key.pem");
             await File.WriteAllTextAsync(certPath, cert.ExportCertificatePem());
             await File.WriteAllTextAsync(keyPath, key.ExportPkcs8PrivateKeyPem());
 
@@ -98,14 +98,14 @@ public class ValidationTests
     [Test]
     public async Task Certificate_with_key_in_the_same_file_loads()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "openshell-di-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "openshell-di-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
             using var key = ECDsa.Create();
             var request = new CertificateRequest("CN=test", key, HashAlgorithmName.SHA256);
             using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
-            var combined = Path.Combine(dir, "both.pem");
+            var combined = Path.Join(dir, "both.pem");
             await File.WriteAllTextAsync(combined, cert.ExportCertificatePem() + Environment.NewLine + key.ExportPkcs8PrivateKeyPem());
 
             var client = new OpenShellOptions { Address = new Uri("https://g.example.com"), ClientCertificatePath = combined }.ToClientOptions(null);

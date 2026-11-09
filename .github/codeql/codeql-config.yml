@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+# CodeQL analyses the code we write, tests included. Compiler-generated sources (source generators write them under
+# obj/) and the documentation snippets (illustrative fragments, compiled separately) are left out.
+name: OpenShell.Net
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - "**/obj/**"
+  - docs/snippets

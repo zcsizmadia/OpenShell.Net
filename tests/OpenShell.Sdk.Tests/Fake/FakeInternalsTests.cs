@@ -185,7 +185,7 @@ public class FakeInternalsTests
                 throw;
             }
         });
-        var call = ForwardServer.Start(gateway, CancellationToken.None);
+        using var call = ForwardServer.Start(gateway, CancellationToken.None);
         await call.RequestStream.WriteAsync(Init());
         await started.Task.WaitAsync(Patience);
 
@@ -199,7 +199,7 @@ public class FakeInternalsTests
     public async Task Cancelling_an_interactive_call_ends_the_server_loop()
     {
         using var gateway = new FakeGateway();
-        var call = InteractiveServer.Start(gateway, CancellationToken.None);
+        using var call = InteractiveServer.Start(gateway, CancellationToken.None);
         await call.RequestStream.WriteAsync(Start());
         var kinds = new List<Wire.ExecSandboxEvent.PayloadOneofCase>();
         while (await call.ResponseStream.MoveNext(CancellationToken.None).WaitAsync(Patience))

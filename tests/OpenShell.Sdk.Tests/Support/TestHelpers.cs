@@ -13,13 +13,13 @@ internal sealed class TempDirectory : IDisposable
 {
     public TempDirectory()
     {
-        Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openshell-tests-" + Guid.NewGuid().ToString("N"));
+        Path = System.IO.Path.Join(System.IO.Path.GetTempPath(), "openshell-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path);
     }
 
     public string Path { get; }
 
-    public string Combine(params string[] parts) => System.IO.Path.Combine([Path, .. parts]);
+    public string Combine(params string[] parts) => System.IO.Path.Join([Path, .. parts]);
 
     public string Make(params string[] parts)
     {
@@ -70,7 +70,7 @@ internal sealed class ConformanceFixture
     {
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "conformance", fileName);
+            var candidate = Path.Join(dir.FullName, "conformance", fileName);
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -100,7 +100,7 @@ internal static class TestPorts
     /// <summary>Reserves then releases an ephemeral loopback port.</summary>
     public static int Free()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();

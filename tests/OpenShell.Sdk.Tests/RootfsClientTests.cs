@@ -12,7 +12,7 @@ public class RootfsClientTests
 {
     private static string TempDir()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "openshell-rootfs-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "openshell-rootfs-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         return dir;
     }
@@ -63,8 +63,8 @@ public class RootfsClientTests
         var dir = TempDir();
         try
         {
-            var source = Path.Combine(dir, "root.tar");
-            var target = Path.Combine(dir, "staged.tar");
+            var source = Path.Join(dir, "root.tar");
+            var target = Path.Join(dir, "staged.tar");
             var payload = new byte[300_000];
             Random.Shared.NextBytes(payload);
             await File.WriteAllBytesAsync(source, payload);
@@ -90,9 +90,9 @@ public class RootfsClientTests
         var dir = TempDir();
         try
         {
-            var source = Path.Combine(dir, "big.tar");
+            var source = Path.Join(dir, "big.tar");
             await File.WriteAllBytesAsync(source, new byte[1000]);
-            using var client = ClientTests.NewClient(Gateway(Path.Combine(dir, "out.tar"), 100));
+            using var client = ClientTests.NewClient(Gateway(Path.Join(dir, "out.tar"), 100));
 
             var ex = await Assert.That(async () => await client.Rootfs.StageAsync(source)).Throws<OpenShellException>();
 
@@ -111,7 +111,7 @@ public class RootfsClientTests
         using var client = ClientTests.NewClient(new FakeCallInvoker());
 
         await Assert.That(async () => await client.Rootfs.StageAsync(" ")).Throws<ArgumentException>();
-        await Assert.That(async () => await client.Rootfs.StageAsync(Path.Combine(Path.GetTempPath(), "does-not-exist.tar"))).Throws<FileNotFoundException>();
+        await Assert.That(async () => await client.Rootfs.StageAsync(Path.Join(Path.GetTempPath(), "does-not-exist.tar"))).Throws<FileNotFoundException>();
         await Assert.That(async () => await client.Rootfs.BeginStagingAsync("", 1)).Throws<ArgumentException>();
     }
 

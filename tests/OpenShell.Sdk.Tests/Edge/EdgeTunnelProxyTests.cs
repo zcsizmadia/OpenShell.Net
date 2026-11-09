@@ -210,7 +210,7 @@ public class EdgeTunnelProxyTests
             }, ct);
             return ValueTask.FromResult<WebSocket>(client);
         });
-        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger });
+        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger });
         using var client = await ConnectAsync(proxy);
         var stream = client.GetStream();
 
@@ -267,7 +267,7 @@ public class EdgeTunnelProxyTests
         var logger = new ListLogger();
         var tunnel = new FailingSendWebSocket();
         var connector = new WebSocketConnector((_, _, _) => ValueTask.FromResult<WebSocket>(tunnel));
-        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromSeconds(30) });
+        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromSeconds(30) });
         using var client = await ConnectAsync(proxy);
         var stream = client.GetStream();
 
@@ -294,6 +294,7 @@ public class EdgeTunnelProxyTests
                 var buffer = new byte[16];
                 while ((await server.ReceiveAsync(buffer, CancellationToken.None)).MessageType != WebSocketMessageType.Close)
                 {
+                    // Drain until the client closes; the payloads don't matter here.
                 }
 
                 await server.SendAsync("final"u8.ToArray(), WebSocketMessageType.Binary, true, CancellationToken.None);
@@ -354,7 +355,7 @@ public class EdgeTunnelProxyTests
             connected.TrySetResult();
             return ValueTask.FromResult<WebSocket>(client);
         });
-        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromMilliseconds(200) });
+        await using var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromMilliseconds(200) });
         using var client = await ConnectAsync(proxy);
         await connected.Task;
         await Task.Delay(50);

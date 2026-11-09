@@ -19,7 +19,7 @@ public class GatewayLocatorTests
     internal static string Register(TempDirectory root, string area, string name, string metadata)
     {
         var dir = root.Make(area, "gateways", name);
-        File.WriteAllText(Path.Combine(dir, "metadata.json"), metadata);
+        File.WriteAllText(Path.Join(dir, "metadata.json"), metadata);
         return dir;
     }
 
@@ -132,8 +132,8 @@ public class GatewayLocatorTests
     public async Task Unreadable_metadata_and_active_gateway_files_are_reported()
     {
         using var root = new TempDirectory();
-        var metadata = Path.Combine(Register(root, "user", "gw", Metadata()), "metadata.json");
-        var active = Path.Combine(root.Make("user"), "active_gateway");
+        var metadata = Path.Join(Register(root, "user", "gw", Metadata()), "metadata.json");
+        var active = Path.Join(root.Make("user"), "active_gateway");
         File.WriteAllText(active, "gw");
         var locator = Locator(root);
 
@@ -226,7 +226,7 @@ public class GatewayLocatorTests
         using var root = new TempDirectory();
         Register(root, "user", "from-env", Metadata("https://env.example.com"));
         Register(root, "user", "from-file", Metadata("https://file.example.com"));
-        File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "from-file\n");
+        File.WriteAllText(Path.Join(root.Make("user"), "active_gateway"), "from-file\n");
         var locator = Locator(root, new() { ["OPENSHELL_GATEWAY"] = "from-env" });
 
         await Assert.That(locator.ResolveActiveName()).IsEqualTo("from-env");
@@ -238,7 +238,7 @@ public class GatewayLocatorTests
     {
         using var root = new TempDirectory();
         Register(root, "user", "from-file", Metadata("https://file.example.com"));
-        File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "  from-file \n");
+        File.WriteAllText(Path.Join(root.Make("user"), "active_gateway"), "  from-file \n");
 
         await Assert.That(Locator(root).Load().Name).IsEqualTo("from-file");
     }
@@ -254,7 +254,7 @@ public class GatewayLocatorTests
         // A missing file is not a problem worth reporting.
         await Assert.That(missing.Message).IsEqualTo("no active gateway configured");
 
-        var file = Path.Combine(root.Make("user"), "active_gateway");
+        var file = Path.Join(root.Make("user"), "active_gateway");
         File.WriteAllText(file, "  \n");
         var empty = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
         await Assert.That(empty!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
@@ -280,7 +280,7 @@ public class GatewayLocatorTests
         Register(root, "sys", "alpha", Metadata());
         Register(root, "sys", "charlie", Metadata());
         root.Make("user", "gateways", ".bad");
-        File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "bravo");
+        File.WriteAllText(Path.Join(root.Make("user"), "active_gateway"), "bravo");
 
         var list = Locator(root).List();
 
@@ -296,8 +296,8 @@ public class GatewayLocatorTests
     public async Task Problems_with_both_active_gateway_files_are_reported_together()
     {
         using var root = new TempDirectory();
-        var user = Path.Combine(root.Make("user"), "active_gateway");
-        var system = Path.Combine(root.Make("sys"), "active_gateway");
+        var user = Path.Join(root.Make("user"), "active_gateway");
+        var system = Path.Join(root.Make("sys"), "active_gateway");
         File.WriteAllText(user, "");
         File.WriteAllText(system, "a/b");
 
@@ -330,10 +330,10 @@ public class GatewayLocatorTests
     [Test]
     public async Task User_directory_honors_xdg_config_home()
     {
-        var xdg = Path.Combine(Path.GetTempPath(), "xdg-home");
+        var xdg = Path.Join(Path.GetTempPath(), "xdg-home");
         var locator = new GatewayLocator(new GatewayLocatorOptions { GetEnvironmentVariable = n => n == "XDG_CONFIG_HOME" ? xdg : null });
 
-        await Assert.That(locator.UserConfigDirectory).IsEqualTo(Path.Combine(xdg, "openshell"));
+        await Assert.That(locator.UserConfigDirectory).IsEqualTo(Path.Join(xdg, "openshell"));
     }
 
     [Test]
@@ -348,8 +348,8 @@ public class GatewayLocatorTests
     [Test]
     public async Task User_directory_uses_the_platform_home_variable_when_there_is_no_appdata()
     {
-        var userProfile = Path.Combine(Path.GetTempPath(), "fake-userprofile");
-        var home = Path.Combine(Path.GetTempPath(), "fake-home");
+        var userProfile = Path.Join(Path.GetTempPath(), "fake-userprofile");
+        var home = Path.Join(Path.GetTempPath(), "fake-home");
         var locator = new GatewayLocator(new GatewayLocatorOptions
         {
             GetEnvironmentVariable = n => n switch
@@ -360,15 +360,15 @@ public class GatewayLocatorTests
             },
         });
 
-        var expected = Path.Combine(OperatingSystem.IsWindows() ? userProfile : home, ".config", "openshell");
+        var expected = Path.Join(OperatingSystem.IsWindows() ? userProfile : home, ".config", "openshell");
         await Assert.That(locator.UserConfigDirectory).IsEqualTo(expected);
     }
 
     [Test]
     public async Task User_directory_falls_back_to_the_platform_default()
     {
-        var home = Path.Combine(Path.GetTempPath(), "fake-home");
-        var appData = Path.Combine(Path.GetTempPath(), "fake-appdata");
+        var home = Path.Join(Path.GetTempPath(), "fake-home");
+        var appData = Path.Join(Path.GetTempPath(), "fake-appdata");
         var locator = new GatewayLocator(new GatewayLocatorOptions
         {
             GetEnvironmentVariable = n => n switch
@@ -380,8 +380,8 @@ public class GatewayLocatorTests
         });
 
         var expected = OperatingSystem.IsWindows()
-            ? Path.Combine(appData, "openshell")
-            : Path.Combine(home, ".config", "openshell");
+            ? Path.Join(appData, "openshell")
+            : Path.Join(home, ".config", "openshell");
         await Assert.That(locator.UserConfigDirectory).IsEqualTo(expected);
     }
 

@@ -40,7 +40,7 @@ public class FakeCoreTests
     [Test]
     public async Task Disposing_the_owning_client_rejects_further_calls()
     {
-        var client = New();
+        using var client = New();
         client.Dispose();
         client.Dispose();
 
@@ -215,7 +215,7 @@ public class FakeCoreTests
     public async Task Timers_that_fire_after_disposal_are_ignored()
     {
         var time = new FakeTimeProvider();
-        var client = New(new FakeGatewayOptions { TimeProvider = time, ProvisioningDelay = TimeSpan.FromSeconds(5) });
+        using var client = New(new FakeGatewayOptions { TimeProvider = time, ProvisioningDelay = TimeSpan.FromSeconds(5) });
         await client.Sandboxes.CreateAsync("a", Spec());
         client.Dispose();
 

@@ -170,7 +170,7 @@ public class ClientTests
     public async Task Disposed_client_rejects_calls()
     {
         var invoker = new FakeCallInvoker().Unary<Wire.HealthRequest, Wire.HealthResponse>("Health", _ => new Wire.HealthResponse());
-        var client = NewClient(invoker);
+        using var client = NewClient(invoker);
         client.Dispose();
         client.Dispose();
 
@@ -194,7 +194,7 @@ public class ClientTests
     {
         var invoker = new FakeCallInvoker().Unary<Wire.GetSandboxRequest, Wire.SandboxResponse>("GetSandbox", _ => SandboxReply("sb"));
         using var client = NewClient(invoker);
-        var other = client.InWorkspace("team-a");
+        using var other = client.InWorkspace("team-a");
 
         await other.Sandboxes.GetAsync("sb");
         await client.Sandboxes.GetAsync("sb");

@@ -305,7 +305,7 @@ public class OwnerRoutingTests
 
         FailRouted(invoker, "ForwardTcp", () => Task.FromException<Metadata>(new RpcException(new Status(StatusCode.Unavailable, "no healthy upstream"))));
 
-        await using (var tunnel = await client.Ssh.TunnelAsync("sb"))
+        await using (await client.Ssh.TunnelAsync("sb"))
         {
             await Assert.That(string.Join(",", OptionsOf(invoker, "ForwardTcp").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
             await Assert.That(Relay.Channel(invoker, 1).Received[0].Init.AuthorizationToken).IsEqualTo("tok");

@@ -137,10 +137,10 @@ public static class GatewayClient
     /// </summary>
     internal static TlsOptions LoadTls(GatewayMetadata config)
     {
-        var dir = Path.Combine(config.StateDirectory, "mtls");
-        var caPath = Path.Combine(dir, "ca.crt");
-        var certPath = Path.Combine(dir, "tls.crt");
-        var keyPath = Path.Combine(dir, "tls.key");
+        var dir = Path.Join(config.StateDirectory, "mtls");
+        var caPath = Path.Join(dir, "ca.crt");
+        var certPath = Path.Join(dir, "tls.crt");
+        var keyPath = Path.Join(dir, "tls.key");
         var hasCa = File.Exists(caPath);
         var hasPair = File.Exists(certPath) && File.Exists(keyPath);
 

@@ -94,17 +94,17 @@ public class SandboxFeatureTests
             await Assert.That(download.ToArray().SequenceEqual(payload)).IsTrue();
 
             // A directory tree, both ways.
-            var source = Directory.CreateDirectory(Path.Combine(local.FullName, "source"));
-            Directory.CreateDirectory(Path.Combine(source.FullName, "nested"));
-            await File.WriteAllTextAsync(Path.Combine(source.FullName, "a.txt"), "alpha", cancellationToken);
-            await File.WriteAllTextAsync(Path.Combine(source.FullName, "nested", "b.txt"), "beta", cancellationToken);
+            var source = Directory.CreateDirectory(Path.Join(local.FullName, "source"));
+            Directory.CreateDirectory(Path.Join(source.FullName, "nested"));
+            await File.WriteAllTextAsync(Path.Join(source.FullName, "a.txt"), "alpha", cancellationToken);
+            await File.WriteAllTextAsync(Path.Join(source.FullName, "nested", "b.txt"), "beta", cancellationToken);
             await client.Files.UploadDirectoryAsync(sandbox.Name, source.FullName, "/tmp/dotnet-it/tree", cancellationToken);
             await Assert.That((await sandbox.ShAsync("cat /tmp/dotnet-it/tree/a.txt /tmp/dotnet-it/tree/nested/b.txt", cancellationToken)).Trim()).IsEqualTo("alphabeta");
 
-            var target = Path.Combine(local.FullName, "target");
+            var target = Path.Join(local.FullName, "target");
             await client.Files.DownloadDirectoryAsync(sandbox.Name, "/tmp/dotnet-it/tree", target, cancellationToken);
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "a.txt"), cancellationToken)).IsEqualTo("alpha");
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "nested", "b.txt"), cancellationToken)).IsEqualTo("beta");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(target, "a.txt"), cancellationToken)).IsEqualTo("alpha");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(target, "nested", "b.txt"), cancellationToken)).IsEqualTo("beta");
         }
         finally
         {

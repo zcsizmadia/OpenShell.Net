@@ -152,6 +152,7 @@ public class FakeContractTests
         }
         catch (Exception e)
         {
+            // Any other exception type is part of the contract being compared, so record it rather than fail here.
             return (e.GetType(), null);
         }
     }
