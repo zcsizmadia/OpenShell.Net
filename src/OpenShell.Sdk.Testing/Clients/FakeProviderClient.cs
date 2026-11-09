@@ -280,7 +280,7 @@ internal sealed partial class FakeProviderClient : IProviderClient
             }));
     }
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z")]
     private static partial Regex KeyPattern();
 
     private static OpenShellException InvalidInput(string message) => new(OpenShellErrorKind.InvalidArgument, message);

@@ -19,6 +19,9 @@ updates:
       # forced onto newer packages. Raise these deliberately when dropping net8.0, not through Dependabot.
       - dependency-name: Microsoft.Extensions.*
         update-types: [version-update:semver-major]
+      # CsCheck 5 drops net8.0, which the tests still run on.
+      - dependency-name: CsCheck
+        update-types: [version-update:semver-major]
     groups:
       grpc:
         patterns: [Google.Protobuf, Grpc.*]
@@ -26,7 +29,7 @@ updates:
         patterns: [Microsoft.Extensions.*]
         exclude-patterns: [Microsoft.Extensions.TimeProvider.Testing]
       test:
-        patterns: [TUnit*, Microsoft.Testing.*, Microsoft.Extensions.TimeProvider.Testing]
+        patterns: [TUnit*, CsCheck, Microsoft.Testing.*, Microsoft.Extensions.TimeProvider.Testing]
 
   # Workflow actions are pinned by commit SHA with a version comment; Dependabot updates both.
   - package-ecosystem: github-actions
