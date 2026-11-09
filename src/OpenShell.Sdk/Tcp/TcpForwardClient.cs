@@ -47,13 +47,13 @@ public interface ITcpClient
     ValueTask<IForwardListener> ListenAsync(string sandbox, uint remotePort, int localPort = 0, ListenOptions? options = null, CancellationToken cancellationToken = default);
 }
 
-internal sealed class TcpForwardClient(ClientCore core, string workspace, ISandboxClient sandboxes, ISshClient ssh) : ITcpClient
+internal sealed class TcpForwardClient(ClientCore core, string workspace, ISshClient ssh) : ITcpClient
 {
     public async ValueTask<ForwardStream> ForwardAsync(string sandbox, uint port, ForwardOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sandbox);
         ValidatePort(port);
-        _ = await sandboxes.GetAsync(sandbox, cancellationToken).ConfigureAwait(false);
+        var (_, owner) = await core.Routing.GetSandboxAsync(workspace, sandbox, cancellationToken).ConfigureAwait(false);
         var init = new Wire.TcpForwardInit
         {
             Sandbox = sandbox,
@@ -61,7 +61,7 @@ internal sealed class TcpForwardClient(ClientCore core, string workspace, ISandb
             ServiceId = options?.ServiceId ?? "",
             Tcp = new Wire.TcpRelayTarget { Host = "127.0.0.1", Port = port },
         };
-        return await ForwardStream.OpenAsync(core, init, cancellationToken).ConfigureAwait(false);
+        return await ForwardStream.OpenAsync(core, init, cancellationToken, replica: owner, onUnrouted: () => core.Routing.Forget(workspace, sandbox)).ConfigureAwait(false);
     }
 
     public ValueTask<IForwardListener> ListenAsync(string sandbox, uint remotePort, int localPort = 0, ListenOptions? options = null, CancellationToken cancellationToken = default)

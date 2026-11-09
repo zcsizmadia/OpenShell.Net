@@ -181,6 +181,10 @@ using var client = new OpenShellClient(new OpenShellClientOptions
 });
 ```
 
+### Multi-replica gateways
+
+On a Kubernetes gateway with several replicas and replica routing enabled (`grpcRoute.replicaRouting.enabled`), exec, interactive exec, port forwarding, and SSH tunnels go straight to the replica that holds the sandbox's supervisor session instead of being relayed between replicas. The client asks `GetSandbox` for the owner (`x-openshell-want-owner`) and tags the stream with `x-openshell-replica`. It caches the answer for 30 seconds per sandbox, so a single-replica gateway costs one extra `GetSandbox` per sandbox and period. If the owner replica cannot be reached, the stream is reopened once without routing; a stale owner is harmless because every replica relays. Set `RouteToOwnerReplica = false` to turn it off.
+
 ## Retries
 
 Reads (`Get*`, `List*`, and `Health`) that fail with `Unavailable` are retried up to four times with exponential backoff and jitter. Writes are never retried by default, because a lost response could repeat a side effect. Retries stop at the call's deadline and when the caller cancels. Streaming calls are not retried; `Watch.WatchAsync` reconnects on its own. When the gateway attaches a retry delay (`RetryInfo`, for example with the `MUTATION_LOCK_TIMEOUT` reason after a 10 s wait for a sandbox or workspace lock), the next attempt waits at least that long; a delay longer than `MaxBackoff` ends the retries and surfaces the error with its `RetryDelay`.

@@ -63,6 +63,7 @@ public class RegistrationTests
             ("InsecureSkipVerify", "true"),
             ("AllowInsecureAuth", "true"),
             ("DefaultTimeout", "00:00:30"),
+            ("RouteToOwnerReplica", "false"),
             ("Retry:MaxAttempts", "6"),
             ("Retry:InitialBackoff", "00:00:00.250"),
             ("Retry:MaxBackoff", "00:00:10"),
@@ -83,6 +84,7 @@ public class RegistrationTests
         await Assert.That(options.InsecureSkipVerify).IsTrue();
         await Assert.That(options.AllowInsecureAuth).IsTrue();
         await Assert.That(options.DefaultTimeout).IsEqualTo(TimeSpan.FromSeconds(30));
+        await Assert.That(options.RouteToOwnerReplica).IsFalse();
         var policy = options.Retry!.ToPolicy();
         await Assert.That(policy.MaxAttempts).IsEqualTo(6);
         await Assert.That(policy.InitialBackoff).IsEqualTo(TimeSpan.FromMilliseconds(250));
@@ -90,6 +92,15 @@ public class RegistrationTests
         await Assert.That(policy.BackoffMultiplier).IsEqualTo(3d);
         await Assert.That(policy.Jitter).IsEqualTo(0.5);
         await Assert.That(policy.RetryableStatusCodes).IsEquivalentTo(new[] { StatusCode.Unavailable, StatusCode.ResourceExhausted });
+    }
+
+    [Test]
+    public async Task Route_to_owner_replica_reaches_the_client_options()
+    {
+        var options = new OpenShellOptions { Address = new Uri("https://gateway.example.com"), RouteToOwnerReplica = false };
+
+        await Assert.That(options.ToClientOptions(null).RouteToOwnerReplica).IsFalse();
+        await Assert.That(new OpenShellOptions { Address = options.Address }.ToClientOptions(null).RouteToOwnerReplica).IsTrue();
     }
 
     [Test]
@@ -104,6 +115,7 @@ public class RegistrationTests
         await Assert.That(options.Retry).IsNull();
         await Assert.That(options.InsecureSkipVerify).IsFalse();
         await Assert.That(options.DefaultTimeout).IsNull();
+        await Assert.That(options.RouteToOwnerReplica).IsTrue();
     }
 
     [Test]

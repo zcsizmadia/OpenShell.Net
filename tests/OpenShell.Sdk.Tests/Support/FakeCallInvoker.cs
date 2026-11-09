@@ -198,6 +198,24 @@ internal sealed class FakeCallInvoker : CallInvoker
         return this;
     }
 
+    /// <summary>Registers a server-streaming handler that also sees the call options (for example request headers).</summary>
+    public FakeCallInvoker Stream<TReq, TResp>(string method, Func<TReq, CallOptions, IEnumerable<TResp>> handler)
+        where TReq : class
+        where TResp : class
+    {
+        _stream[method] = (r, o) => handler((TReq)r, o).Cast<object>();
+        return this;
+    }
+
+    /// <summary>
+    /// Supplies the response headers of successful unary, server-streaming, and duplex calls, by method name and call
+    /// options. A faulted task models a call that ended before the gateway answered. Defaults to empty headers.
+    /// </summary>
+    public Func<string, CallOptions, Task<Metadata>>? ResponseHeaders { get; set; }
+
+    private Task<Metadata> HeadersFor(string method, CallOptions options) =>
+        ResponseHeaders?.Invoke(method, options) ?? Task.FromResult(new Metadata());
+
     public int CountOf(string method) => Calls.Count(c => c.Method == method);
 
     public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
@@ -207,6 +225,15 @@ internal sealed class FakeCallInvoker : CallInvoker
         UnaryFullNames.Add(method.FullName);
         if (!_unary.TryGetValue(method.Name, out var handler))
         {
+            // The client's best-effort owner-replica lookup before exec: a test that does not script it gets the
+            // failure the client tolerates, so the call goes ahead unrouted.
+            if (options.Headers?.GetValue(OpenShell.Transport.OwnerRouting.WantOwnerHeader) is not null)
+            {
+                var unimplemented = new RpcException(new Status(StatusCode.Unimplemented, "no fake handler"));
+                return new AsyncUnaryCall<TResponse>(
+                    Task.FromException<TResponse>(unimplemented), Task.FromResult(new Metadata()), () => unimplemented.Status, () => [], () => { });
+            }
+
             throw new InvalidOperationException($"no fake handler for {method.Name}");
         }
 
@@ -214,7 +241,7 @@ internal sealed class FakeCallInvoker : CallInvoker
         {
             var response = (TResponse)handler(request, options);
             return new AsyncUnaryCall<TResponse>(
-                Task.FromResult(response), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
+                Task.FromResult(response), HeadersFor(method.Name, options), () => Status.DefaultSuccess, () => [], () => { });
         }
         catch (RpcException e)
         {
@@ -234,7 +261,7 @@ internal sealed class FakeCallInvoker : CallInvoker
 
         var items = handler(request, options).Cast<TResponse>();
         return new AsyncServerStreamingCall<TResponse>(
-            new Reader<TResponse>(items), Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => { });
+            new Reader<TResponse>(items), HeadersFor(method.Name, options), () => Status.DefaultSuccess, () => [], () => { });
     }
 
     /// <summary>Registers a duplex-streaming handler. The handler runs concurrently with the client and ends the call by returning.</summary>
@@ -340,7 +367,7 @@ internal sealed class FakeCallInvoker : CallInvoker
         return new AsyncDuplexStreamingCall<TRequest, TResponse>(
             (IClientStreamWriter<TRequest>)session.Writer,
             (IAsyncStreamReader<TResponse>)session.Reader,
-            Task.FromResult(new Metadata()),
+            HeadersFor(method.Name, options),
             () => Status.DefaultSuccess,
             () => [],
             session.Dispose);

@@ -64,7 +64,7 @@ public interface ISshClient
     ValueTask<ForwardStream> TunnelAsync(string sandbox, TunnelOptions? options = null, CancellationToken cancellationToken = default);
 }
 
-internal sealed partial class SshClient(ClientCore core, string workspace, ISandboxClient sandboxes) : ISshClient
+internal sealed partial class SshClient(ClientCore core, string workspace) : ISshClient
 {
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(5);
 
@@ -97,7 +97,8 @@ internal sealed partial class SshClient(ClientCore core, string workspace, ISand
     public async ValueTask<ForwardStream> TunnelAsync(string sandbox, TunnelOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sandbox);
-        var existing = await sandboxes.GetAsync(sandbox, cancellationToken).ConfigureAwait(false);
+        var (response, owner) = await core.Routing.GetSandboxAsync(workspace, sandbox, cancellationToken).ConfigureAwait(false);
+        var existing = SandboxMapping.ToDomain(response);
         var session = await CreateSessionAsync(sandbox, cancellationToken).ConfigureAwait(false);
         if (session.SandboxId != existing.Id && existing.Id.Length > 0)
         {
@@ -115,7 +116,13 @@ internal sealed partial class SshClient(ClientCore core, string workspace, ISand
         };
         try
         {
-            return await ForwardStream.OpenAsync(core, init, cancellationToken, () => RevokeQuietlyAsync(session.Token)).ConfigureAwait(false);
+            return await ForwardStream.OpenAsync(
+                core,
+                init,
+                cancellationToken,
+                () => RevokeQuietlyAsync(session.Token),
+                replica: owner,
+                onUnrouted: () => core.Routing.Forget(workspace, sandbox)).ConfigureAwait(false);
         }
         catch
         {
