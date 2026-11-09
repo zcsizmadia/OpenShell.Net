@@ -425,7 +425,12 @@ scripts/ci.sh            # format check, build, unit tests on every framework, c
 scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack
 ```
 
-The integration tests run against a real gateway and skip unless `OPENSHELL_GATEWAY_ADDRESS` is set (see `tests/OpenShell.Sdk.IntegrationTests/GatewayFixture.cs` for the token, CA, and mTLS variables).
+The integration tests run against a real gateway and skip unless `OPENSHELL_GATEWAY_ADDRESS` is set (see `tests/OpenShell.Sdk.IntegrationTests/GatewayFixture.cs` for the token, CA, and mTLS variables). On Linux with Docker, `scripts/integration-gateway.sh` starts the upstream gateway release from `UPSTREAM_VERSION` with the Docker compute driver and mTLS, runs a command against it, and stops it; the Integration workflow runs it on every pull request and nightly:
+
+```shell
+scripts/ci.sh build
+scripts/integration-gateway.sh scripts/ci.sh integration   # or no command: print the variables and keep the gateway running
+```
 
 ## Staying in sync with NVIDIA OpenShell
 
