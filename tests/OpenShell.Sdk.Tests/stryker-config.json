@@ -12,7 +12,8 @@
     "mutate": [
       "!**/Policy/PolicyModels.cs",
       "!**/Providers/ProviderProfileModels.cs",
-      "!**/Providers/ProviderReadinessModels.cs"
+      "!**/Providers/ProviderReadinessModels.cs",
+      "!**/Oidc/OidcBrowser.cs"
     ],
     "ignore-methods": ["ConfigureAwait", "Log*"]
   }

@@ -20,13 +20,20 @@ public class OidcLoginTests
     private static HttpResponseMessage TokenOk(string access = "login-access", string refresh = "login-refresh") =>
         StubHandler.Json($$"""{"access_token":"{{access}}","refresh_token":"{{refresh}}","token_type":"Bearer","expires_in":3600}""");
 
+    /// <summary>
+    /// The default launcher in tests: fails like a missing browser, so no test (and no Stryker mutant of the login
+    /// flow) can fall through to <see cref="OidcBrowser.OpenAsync"/> and open a real browser.
+    /// </summary>
+    private static ValueTask NoBrowser(Uri url, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("tests never open the system browser");
+
     private static OidcOptions Options(StubHandler handler, Func<Uri, CancellationToken, ValueTask>? launcher = null, int? port = null) => new()
     {
         Issuer = Issuer,
         ClientId = "cli",
         HttpClient = new HttpClient(handler),
         InMemory = true,
-        BrowserLauncher = launcher,
+        BrowserLauncher = launcher ?? NoBrowser,
         CallbackPort = port ?? TestPorts.Free(),
         Timeout = TimeSpan.FromSeconds(20),
     };
