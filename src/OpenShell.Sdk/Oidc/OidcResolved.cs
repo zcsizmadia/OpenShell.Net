@@ -81,7 +81,7 @@ internal sealed class OidcResolved
             Time = time,
             Discovery = http is null ? OidcDiscovery.Shared : new OidcDiscovery(http, time),
             Options = options,
-            TokenDirectory = options.TokenCacheDirectory ?? gateway?.Directory,
+            TokenDirectory = options.TokenCacheDirectory ?? gateway?.StateDirectory,
         };
     }
 }

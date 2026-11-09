@@ -89,15 +89,23 @@ public sealed class GatewayLocator
                 ? fromEnv
                 : OperatingSystem.IsWindows() ? null : "/etc/openshell";
 
-    /// <summary>Loads a gateway by name; null selects the active gateway.</summary>
+    /// <summary>
+    /// Loads a gateway by name; null selects the active gateway. A user registration (one with <c>metadata.json</c>)
+    /// shadows a system one; credentials are always read from the user gateway directory
+    /// (<see cref="GatewayMetadata.StateDirectory"/>).
+    /// </summary>
     public GatewayMetadata Load(string? name = null)
     {
         name ??= ResolveActiveName();
         var (directory, source) = ResolveDirectory(name);
-        return ParseMetadata(name, directory, source);
+        return ParseMetadata(name, directory, source, UserGatewayDirectory(name));
     }
 
-    /// <summary>Lists registered gateways, user registrations shadowing system ones.</summary>
+    /// <summary>
+    /// Lists registered gateways sorted by name, as the OpenShell CLI does: a user directory counts only when it holds
+    /// <c>metadata.json</c> (and then shadows a system registration of the same name), and registrations whose metadata
+    /// cannot be read are skipped.
+    /// </summary>
     public IReadOnlyList<GatewayEntry> List()
     {
         var active = TryResolveActiveName();
@@ -106,25 +114,34 @@ public sealed class GatewayLocator
 
         foreach (var name in ListDirectories(UserConfigDirectory))
         {
-            seen.Add(name);
-            result.Add(new GatewayEntry(name, name == active, GatewayConfigSource.User));
+            var directory = Path.Combine(UserConfigDirectory, GatewaySubdir, name);
+            if (HasMetadata(directory) && seen.Add(name) && IsReadable(name, directory, GatewayConfigSource.User))
+            {
+                result.Add(new GatewayEntry(name, name == active, GatewayConfigSource.User));
+            }
         }
 
         if (SystemConfigDirectory is { } system)
         {
             foreach (var name in ListDirectories(system))
             {
-                if (seen.Add(name))
+                var directory = Path.Combine(system, GatewaySubdir, name);
+                if (seen.Add(name) && IsReadable(name, directory, GatewayConfigSource.System))
                 {
                     result.Add(new GatewayEntry(name, name == active, GatewayConfigSource.System));
                 }
             }
         }
 
+        result.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
         return result;
     }
 
-    /// <summary>Resolves the active gateway name from <c>$OPENSHELL_GATEWAY</c> or the <c>active_gateway</c> file.</summary>
+    /// <summary>
+    /// Resolves the active gateway name: <c>$OPENSHELL_GATEWAY</c>, else the user <c>active_gateway</c> file, else the
+    /// system <c>active_gateway</c> file. As in the OpenShell CLI, a missing, empty, or invalid file falls through to the
+    /// next source.
+    /// </summary>
     public string ResolveActiveName()
     {
         if (_env(ActiveGatewayVariable) is { Length: > 0 } fromEnv)
@@ -133,24 +150,20 @@ public sealed class GatewayLocator
             return fromEnv;
         }
 
-        string text;
-        try
+        var problems = new List<string>();
+        if (ReadActiveFile(Path.Combine(UserConfigDirectory, ActiveGatewayFile), problems) is { } user)
         {
-            text = File.ReadAllText(Path.Combine(UserConfigDirectory, ActiveGatewayFile));
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw new OpenShellException(OpenShellErrorKind.NotFound, "no active gateway configured", e);
+            return user;
         }
 
-        var name = text.Trim();
-        if (name.Length == 0)
+        if (SystemConfigDirectory is { } system && ReadActiveFile(Path.Combine(system, ActiveGatewayFile), problems) is { } fromSystem)
         {
-            throw new OpenShellException(OpenShellErrorKind.NotFound, "no active gateway configured: active_gateway file is empty");
+            return fromSystem;
         }
 
-        ValidateName(name);
-        return name;
+        throw new OpenShellException(
+            OpenShellErrorKind.NotFound,
+            problems.Count == 0 ? "no active gateway configured" : "no active gateway configured: " + string.Join("; ", problems));
     }
 
     /// <summary>
@@ -218,12 +231,72 @@ public sealed class GatewayLocator
         }
     }
 
+    /// <summary>
+    /// Reads a gateway name from an <c>active_gateway</c> file; null, with the reason added to
+    /// <paramref name="problems"/> when the file exists, if it is missing, unreadable, empty, or invalid.
+    /// </summary>
+    private static string? ReadActiveFile(string path, List<string> problems)
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            problems.Add($"cannot read {path}");
+            return null;
+        }
+
+        var name = text.Trim();
+        if (name.Length == 0)
+        {
+            problems.Add($"{path} is empty");
+            return null;
+        }
+
+        try
+        {
+            ValidateName(name);
+        }
+        catch (OpenShellException e)
+        {
+            problems.Add($"{path} names an invalid gateway ({e.Message})");
+            return null;
+        }
+
+        return name;
+    }
+
+    private string UserGatewayDirectory(string name) => Path.Combine(UserConfigDirectory, GatewaySubdir, name);
+
+    private static bool HasMetadata(string directory) => File.Exists(Path.Combine(directory, MetadataFile));
+
+    private static bool IsReadable(string name, string directory, GatewayConfigSource source)
+    {
+        try
+        {
+            ParseMetadata(name, directory, source, directory);
+            return true;
+        }
+        catch (OpenShellException)
+        {
+            return false;
+        }
+    }
+
     private (string Directory, GatewayConfigSource Source) ResolveDirectory(string name)
     {
         ValidateName(name);
 
-        var user = Path.Combine(UserConfigDirectory, GatewaySubdir, name);
-        if (Directory.Exists(user))
+        // Only metadata.json falls back to the system configuration: a user directory holding just credentials (such as
+        // the oidc_token.json the CLI writes when signing in to a system gateway) does not shadow the system registration.
+        var user = UserGatewayDirectory(name);
+        if (HasMetadata(user))
         {
             return (user, GatewayConfigSource.User);
         }
@@ -231,7 +304,7 @@ public sealed class GatewayLocator
         if (SystemConfigDirectory is { } system)
         {
             var sys = Path.Combine(system, GatewaySubdir, name);
-            if (Directory.Exists(sys))
+            if (HasMetadata(sys))
             {
                 return (sys, GatewayConfigSource.System);
             }
@@ -240,7 +313,7 @@ public sealed class GatewayLocator
         throw new OpenShellException(OpenShellErrorKind.NotFound, $"gateway '{name}' not found");
     }
 
-    private static GatewayMetadata ParseMetadata(string name, string directory, GatewayConfigSource source)
+    private static GatewayMetadata ParseMetadata(string name, string directory, GatewayConfigSource source, string stateDirectory)
     {
         var path = Path.Combine(directory, MetadataFile);
         GatewayMetadataDto? meta;
@@ -265,6 +338,7 @@ public sealed class GatewayLocator
                 AuthMode = ParseAuthMode(meta.AuthMode),
                 Source = source,
                 Directory = directory,
+                StateDirectory = stateDirectory,
                 OidcIssuer = NullIfEmpty(meta.OidcIssuer),
                 OidcClientId = NullIfEmpty(meta.OidcClientId),
                 OidcAudience = NullIfEmpty(meta.OidcAudience),

@@ -83,7 +83,7 @@ public class GatewayDiscoveryTests
 
         var ex = await Assert.That(() => Locator(root).ResolveActiveName()).Throws<OpenShellException>();
 
-        await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
         await Assert.That(ex.Message).Contains("reserved Windows device name");
     }
 }

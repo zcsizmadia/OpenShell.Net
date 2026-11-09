@@ -179,7 +179,7 @@ using OpenShell.Gateway;
 using var client = GatewayClient.Connect();
 ```
 
-Registrations are read from the user configuration directory (`$XDG_CONFIG_HOME/openshell`, or the OS default) and then the system directory, `/etc/openshell` on Linux and macOS, or the absolute path in `OPENSHELL_SYSTEM_GATEWAY_DIR` on any OS. Gateway names follow the CLI rules: ASCII letters, digits, `-`, `_`, and `.`, so host-derived names such as `gw.example.com` and `192.0.2.1` work, while `.` and `..` components and Windows device names such as `CON` or `COM1.example.com` are rejected on every platform.
+Registrations are read from the user configuration directory (`$XDG_CONFIG_HOME/openshell`, or the OS default) and then the system directory, `/etc/openshell` on Linux and macOS, or the absolute path in `OPENSHELL_SYSTEM_GATEWAY_DIR` on any OS. As in the CLI, only `active_gateway` and `metadata.json` fall back to the system directory: the active gateway comes from `$OPENSHELL_GATEWAY`, then the user `active_gateway`, then the system one, and a user entry shadows a system registration only when it has its own `metadata.json`. Credentials (the `mtls` bundle, `oidc_token.json`, `edge_token`) are always read from and written to the user gateway directory, `GatewayMetadata.StateDirectory`. Gateway names follow the CLI rules: ASCII letters, digits, `-`, `_`, and `.`, so host-derived names such as `gw.example.com` and `192.0.2.1` work, while `.` and `..` components and Windows device names such as `CON` or `COM1.example.com` are rejected on every platform.
 
 ### Token transport safety
 
