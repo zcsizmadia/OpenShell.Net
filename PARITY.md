@@ -48,7 +48,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Policy | draft get, approve, reject, approve all, edit, undo, clear, history, status, revisions | G | ✅ |
 | Providers | create, get, list (with label selector), update, delete, ensure | G P | ✅ |
 | Provider credentials | `GetCredentialsAsync` (operator-only, values redacted in `ToString`) | T P | ✅ |
-| Provider profiles | list, get, import, update, lint, delete, platform view | G | ✅ |
+| Provider profiles | list, get, import, update, lint, delete, platform view; `StablePlaceholder` with a gateway support check (v0.1.7) | G | ✅ |
 | Provider refresh | status, configure, rotate, delete | G | ✅ |
 | Rootfs staging | `BeginStagingAsync`, `StageAsync`, `RootfsDriverConfig.WithStagingToken` | none | ✅ |
 | Raw access | generated gRPC clients on `OpenShellClient.Raw` and `OpenShellClient.RawSandboxUpdates`; `SandboxSpec.RawSpec` hook | R T | ✅ |

@@ -92,7 +92,7 @@ internal sealed class FakeProviderProfileClient : IProviderProfileClient
         return ValueTask.FromResult(_gateway.Run("ProviderProfiles.Lint", _workspace, null, cancellationToken, () =>
         {
             var diagnostics = Check(items, existingConflicts: false);
-            return new LintProfilesResult(diagnostics, diagnostics.All(d => d.Severity != "error"));
+            return new LintProfilesResult(diagnostics, diagnostics.All(d => d.Severity != "error"), SupportsStablePlaceholder: true);
         }));
     }
 
@@ -187,9 +187,38 @@ internal sealed class FakeProviderProfileClient : IProviderProfileClient
             diagnostics.AddRange(profile.Credentials
                 .Where(c => string.IsNullOrWhiteSpace(c.Name))
                 .Select(_ => new ProfileDiagnostic(item.Source, profile.Id, "credentials.name", "every credential needs a name", "error")));
+            diagnostics.AddRange(StablePlaceholderFindings(item.Source, profile));
         }
 
         return diagnostics;
+    }
+
+    /// <summary>The gateway's stable_placeholder rules (NVIDIA/OpenShell v0.1.7).</summary>
+    private static IEnumerable<ProfileDiagnostic> StablePlaceholderFindings(string source, ProviderProfile profile)
+    {
+        const string Field = "credentials.stable_placeholder";
+        var coMinted = profile.Credentials
+            .SelectMany(c => c.Refresh?.AdditionalOutputs ?? [])
+            .Select(o => o.Credential)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var credential in profile.Credentials.Where(c => c.StablePlaceholder))
+        {
+            var gatewayMinted = credential.Refresh is { Strategy: not (RefreshStrategy.Unspecified or RefreshStrategy.Static or RefreshStrategy.External) };
+            if (gatewayMinted || coMinted.Contains(credential.Name))
+            {
+                yield return new ProfileDiagnostic(source, profile.Id, Field, "stable_placeholder is incompatible with gateway-managed credential refresh", "error");
+            }
+
+            if (credential.EnvVars.Count == 0)
+            {
+                yield return new ProfileDiagnostic(source, profile.Id, Field, "stable_placeholder requires at least one environment variable", "error");
+            }
+
+            if (credential.TokenGrant is not null)
+            {
+                yield return new ProfileDiagnostic(source, profile.Id, Field, "stable_placeholder is incompatible with token_grant credentials", "error");
+            }
+        }
     }
 }
 

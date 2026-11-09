@@ -162,6 +162,14 @@ public sealed record ProfileCredential
 
     /// <summary>Token grant declaration.</summary>
     public CredentialTokenGrant? TokenGrant { get; init; }
+
+    /// <summary>
+    /// Keeps one opaque, identity-bound environment placeholder across value-only provider revisions, instead of a new
+    /// placeholder per revision. Requires at least one environment variable, and cannot be combined with
+    /// gateway-managed refresh or a token grant. Import, update, and lint first check that the gateway supports it,
+    /// because older gateways drop unknown fields silently.
+    /// </summary>
+    public bool StablePlaceholder { get; init; }
 }
 
 /// <summary>EXPERIMENTAL: non-secret content served at a virtual sandbox path. May change or be removed.</summary>
@@ -226,7 +234,10 @@ public sealed record ImportProfilesResult(IReadOnlyList<ProfileDiagnostic> Diagn
 public sealed record UpdateProfileResult(IReadOnlyList<ProfileDiagnostic> Diagnostics, ProviderProfile? Profile, bool Updated);
 
 /// <summary>Result of linting profiles.</summary>
-public sealed record LintProfilesResult(IReadOnlyList<ProfileDiagnostic> Diagnostics, bool Valid);
+/// <param name="Diagnostics">Validation findings.</param>
+/// <param name="Valid">True when no finding is an error.</param>
+/// <param name="SupportsStablePlaceholder">Whether the gateway honours <see cref="ProfileCredential.StablePlaceholder"/>.</param>
+public sealed record LintProfilesResult(IReadOnlyList<ProfileDiagnostic> Diagnostics, bool Valid, bool SupportsStablePlaceholder = false);
 
 /// <summary>Options for profile mutations.</summary>
 public sealed record ProfileMutationOptions

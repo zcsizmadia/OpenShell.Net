@@ -303,6 +303,8 @@ var credentials = await operatorClient.Providers.GetCredentialsAsync(
     new ProviderCredentialsOptions { Workspace = "production" });
 ```
 
+A profile credential with `StablePlaceholder = true` keeps one opaque placeholder in the sandbox environment across value-only provider revisions. It needs at least one environment variable and cannot use gateway-managed refresh or a token grant. Because older gateways drop unknown fields silently, `ImportAsync`, `UpdateAsync`, and `LintAsync` first lint the profiles and fail with `OpenShellErrorKind.Unimplemented` when the gateway does not support it; `LintProfilesResult.SupportsStablePlaceholder` reports support.
+
 ## Other APIs
 
 | Property | Operations |
