@@ -11,7 +11,8 @@
 #
 # Linux only (x86_64 or aarch64), with Docker, curl, openssl, and python3. It mirrors upstream's
 # e2e/with-docker-gateway.sh (host, non-container branch) at the tag in UPSTREAM_VERSION:
-#   - downloads the openshell-gateway release binary for that tag and verifies its SHA-256 checksum;
+#   - downloads the openshell-gateway release binary for that tag and verifies its SHA-256 checksum
+#     (falling back to the same binary in ghcr.io/nvidia/openshell/gateway:<version> if the download fails);
 #   - pulls ghcr.io/nvidia/openshell/{supervisor,sandbox}:<version> and the default sandbox image;
 #   - generates the gateway PKI (`openshell-gateway generate-certs`) and the Ed25519 gateway JWT keys;
 #   - starts the gateway on 127.0.0.1 with TLS and mTLS client authentication, and waits for /healthz.
@@ -52,30 +53,6 @@ for tool in docker curl openssl python3 sha256sum tar; do
 done
 docker info >/dev/null 2>&1 || die "the Docker daemon is not reachable (docker info failed)"
 
-# ── Gateway binary ───────────────────────────────────────────────────
-asset="openshell-gateway-$target.tar.gz"
-release_url="https://github.com/NVIDIA/OpenShell/releases/download/$tag"
-bin_dir="$cache_dir/$tag-$target"
-gateway_bin="$bin_dir/openshell-gateway"
-if [[ ! -x "$gateway_bin" ]]; then
-  echo "Downloading $asset ($tag)..."
-  download="$(mktemp -d)"
-  curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 --connect-timeout 30 -o "$download/$asset" "$release_url/$asset"
-  curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 --connect-timeout 30 -o "$download/checksums.txt" "$release_url/openshell-gateway-checksums-sha256.txt"
-  expected="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$download/checksums.txt")"
-  [[ -n "$expected" ]] || die "$asset is not listed in openshell-gateway-checksums-sha256.txt"
-  actual="$(sha256sum "$download/$asset" | cut -d' ' -f1)"
-  [[ "$expected" == "$actual" ]] || die "checksum mismatch for $asset: expected $expected, got $actual"
-  mkdir -p "$download/extract" "$bin_dir"
-  tar -xzf "$download/$asset" -C "$download/extract"
-  found="$(find "$download/extract" -type f -name openshell-gateway | head -1)"
-  [[ -n "$found" ]] || die "openshell-gateway not found in $asset"
-  install -m 0755 "$found" "$gateway_bin"
-  rm -rf "$download"
-fi
-"$gateway_bin" --version
-
-# ── Images ───────────────────────────────────────────────────────────
 pull() {
   local image=$1 attempt
   if docker image inspect "$image" >/dev/null 2>&1; then
@@ -88,6 +65,61 @@ pull() {
   done
   die "could not pull $image"
 }
+
+# ── Gateway binary ───────────────────────────────────────────────────
+asset="openshell-gateway-$target.tar.gz"
+release_url="https://github.com/NVIDIA/OpenShell/releases/download/$tag"
+gateway_image="$registry/gateway:$version"
+bin_dir="$cache_dir/$tag-$target"
+gateway_bin="$bin_dir/openshell-gateway"
+
+# The release tarball, checked against the release's SHA-256 list. Returns non-zero when the download fails;
+# a checksum mismatch is fatal.
+download_release_binary() {
+  local download expected actual found
+  download="$(mktemp -d)"
+  echo "Downloading $asset ($tag)..."
+  if ! curl -fsSL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 -o "$download/$asset" "$release_url/$asset" \
+    || ! curl -fsSL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 -o "$download/checksums.txt" "$release_url/openshell-gateway-checksums-sha256.txt"; then
+    rm -rf "$download"
+    return 1
+  fi
+  expected="$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$download/checksums.txt")"
+  [[ -n "$expected" ]] || die "$asset is not listed in openshell-gateway-checksums-sha256.txt"
+  actual="$(sha256sum "$download/$asset" | cut -d' ' -f1)"
+  [[ "$expected" == "$actual" ]] || die "checksum mismatch for $asset: expected $expected, got $actual"
+  mkdir -p "$download/extract" "$bin_dir"
+  tar -xzf "$download/$asset" -C "$download/extract"
+  found="$(find "$download/extract" -type f -name openshell-gateway | head -1)"
+  [[ -n "$found" ]] || die "openshell-gateway not found in $asset"
+  install -m 0755 "$found" "$gateway_bin"
+  rm -rf "$download"
+  echo "Verified $asset against openshell-gateway-checksums-sha256.txt."
+}
+
+# Fallback: the same prebuilt binary from the release's gateway image (deploy/docker/Dockerfile.gateway copies
+# it to /usr/local/bin). GitHub release downloads intermittently answer 504 from Actions runners.
+extract_image_binary() {
+  local container
+  pull "$gateway_image"
+  echo "Using openshell-gateway from $gateway_image ($(docker image inspect --format '{{index .RepoDigests 0}}' "$gateway_image"))."
+  container="$(docker create "$gateway_image")"
+  mkdir -p "$bin_dir"
+  docker cp "$container:/usr/local/bin/openshell-gateway" "$bin_dir/openshell-gateway.tmp"
+  docker rm "$container" >/dev/null
+  install -m 0755 "$bin_dir/openshell-gateway.tmp" "$gateway_bin"
+  rm -f "$bin_dir/openshell-gateway.tmp"
+}
+
+if [[ ! -x "$gateway_bin" ]]; then
+  if ! download_release_binary; then
+    echo "WARNING: the release download failed; falling back to the gateway image." >&2
+    extract_image_binary
+  fi
+fi
+"$gateway_bin" --version
+
+# ── Images ───────────────────────────────────────────────────────────
 pull "$supervisor_image"
 pull "$sandbox_runtime_image"
 pull "$sandbox_image"
