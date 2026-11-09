@@ -18,6 +18,33 @@ internal sealed class TestSandbox : IAsyncDisposable
 
     public string Name => Sandbox.Name;
 
+    /// <summary>
+    /// Deletes a sandbox and waits until it is gone. The v0.1.7 Docker driver can fail a delete that comes right after
+    /// a create with Internal ("volume is in use") while the container still starts, so a cleanup retries that error.
+    /// </summary>
+    public static async Task DeleteAsync(OpenShellClient client, string name, string? expectedId = null)
+    {
+        DeletionResult deletion;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                deletion = await client.Sandboxes.DeleteAsync(name, new DeleteOptions { AllowMissing = true }, CancellationToken.None);
+                break;
+            }
+            catch (OpenShellException e) when (e.Kind == OpenShellErrorKind.Internal && attempt < 10)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None);
+            }
+        }
+
+        if (deletion.Outcome == DeletionOutcome.Accepted)
+        {
+            await client.Sandboxes.WaitDeletedAsync(
+                name, new WaitOptions { ExpectedSandboxId = expectedId, Timeout = TimeSpan.FromMinutes(2) }, CancellationToken.None);
+        }
+    }
+
     /// <summary>Creates a sandbox from <see cref="GatewayFixture.Image"/> and waits until it is ready.</summary>
     public static async Task<TestSandbox> CreateAsync(OpenShellClient client, string prefix, CancellationToken cancellationToken)
     {
@@ -53,13 +80,5 @@ internal sealed class TestSandbox : IAsyncDisposable
         return result.StdoutText;
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        var deletion = await Client.Sandboxes.DeleteAsync(Name, new DeleteOptions { AllowMissing = true }, CancellationToken.None);
-        if (deletion.Outcome == DeletionOutcome.Accepted)
-        {
-            await Client.Sandboxes.WaitDeletedAsync(
-                Name, new WaitOptions { ExpectedSandboxId = Sandbox.Id, Timeout = TimeSpan.FromMinutes(2) }, CancellationToken.None);
-        }
-    }
+    public async ValueTask DisposeAsync() => await DeleteAsync(Client, Name, Sandbox.Id);
 }
