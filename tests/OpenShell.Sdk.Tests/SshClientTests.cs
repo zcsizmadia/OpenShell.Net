@@ -69,30 +69,32 @@ public class SshClientTests
 
     public static IEnumerable<(string Name, Action<Wire.CreateSshSessionResponse> Mutate, string Field)> InvalidResponses()
     {
-        yield return ("empty sandbox id", r => r.SandboxId = "", "sandbox_id");
+        yield return ("empty sandbox id", r => r.SandboxId = "", "sandbox_id must match [A-Za-z0-9._-]{1,128}");
         yield return ("sandbox id with slash", r => r.SandboxId = "a/b", "sandbox_id");
         yield return ("sandbox id too long", r => r.SandboxId = new string('a', 129), "sandbox_id");
         yield return ("sandbox id trailing newline", r => r.SandboxId = "abc\n", "sandbox_id");
-        yield return ("empty token", r => r.Token = "", "token");
+        yield return ("empty token", r => r.Token = "", "token must be 1..4096 bytes of [A-Za-z0-9._~+/=-]");
         yield return ("token with space", r => r.Token = "a b", "token");
         yield return ("token with quote", r => r.Token = "a'b", "token");
         yield return ("token too long", r => r.Token = new string('a', 4097), "token");
-        yield return ("empty host", r => r.GatewayHost = "", "gateway_host");
+        yield return ("empty host", r => r.GatewayHost = "", "gateway_host must be a valid DNS name, IPv4 address, or bracketed IPv6 address");
         yield return ("host with shell metachar", r => r.GatewayHost = "a;rm", "gateway_host");
         yield return ("host with space", r => r.GatewayHost = "a b", "gateway_host");
         yield return ("host too long", r => r.GatewayHost = string.Join('.', Enumerable.Repeat(new string('a', 60), 5)), "gateway_host");
         yield return ("host label too long", r => r.GatewayHost = new string('a', 64) + ".com", "gateway_host");
         yield return ("host label leading dash", r => r.GatewayHost = "-a.com", "gateway_host");
+        yield return ("dotted quad with an invalid label", r => r.GatewayHost = "1.2.3.-4", "gateway_host");
+        yield return ("host one byte too long", r => r.GatewayHost = Host253() + "a", "gateway_host");
         yield return ("host empty label", r => r.GatewayHost = "a..com", "gateway_host");
         yield return ("host only dot", r => r.GatewayHost = ".", "gateway_host");
         yield return ("unbracketed ipv6", r => r.GatewayHost = "::1", "gateway_host");
         yield return ("bracketed non-ipv6", r => r.GatewayHost = "[1.2.3.4]", "gateway_host");
         yield return ("bracketed garbage", r => r.GatewayHost = "[nope]", "gateway_host");
-        yield return ("port zero", r => r.GatewayPort = 0, "gateway_port");
+        yield return ("port zero", r => r.GatewayPort = 0, "gateway_port must be an integer in 1..65535");
         yield return ("port too large", r => r.GatewayPort = 65536, "gateway_port");
-        yield return ("bad scheme", r => r.GatewayScheme = "ftp", "gateway_scheme");
+        yield return ("bad scheme", r => r.GatewayScheme = "ftp", "gateway_scheme must be exactly 'http' or 'https'");
         yield return ("empty scheme", r => r.GatewayScheme = "", "gateway_scheme");
-        yield return ("fingerprint with space", r => r.HostKeyFingerprint = "a b", "host_key_fingerprint");
+        yield return ("fingerprint with space", r => r.HostKeyFingerprint = "a b", "host_key_fingerprint must be at most 256 bytes of [A-Za-z0-9:+/=-] when non-empty");
         yield return ("fingerprint too long", r => r.HostKeyFingerprint = new string('a', 257), "host_key_fingerprint");
     }
 
@@ -133,13 +135,72 @@ public class SshClientTests
         await Assert.That(session.GatewayHost).IsEqualTo(host);
     }
 
+    /// <summary>A valid DNS name of exactly 253 bytes: three 63-byte labels and one of 61.</summary>
+    private static string Host253() =>
+        string.Join('.', new string('a', 63), new string('b', 63), new string('c', 63), new string('d', 61));
+
+    public static IEnumerable<(string Name, Action<Wire.CreateSshSessionResponse> Mutate)> BoundaryResponses()
+    {
+        yield return ("one-byte token", r => r.Token = "a");
+        yield return ("4096-byte token", r => r.Token = new string('a', 4096));
+        yield return ("one-letter host", r => r.GatewayHost = "a");
+        yield return ("253-byte host with 63-byte labels", r => r.GatewayHost = Host253());
+        yield return ("port 1", r => r.GatewayPort = 1);
+        yield return ("port 65535", r => r.GatewayPort = 65535);
+        yield return ("http scheme", r => r.GatewayScheme = "http");
+        yield return ("256-byte fingerprint", r => r.HostKeyFingerprint = new string('f', 256));
+    }
+
+    [Test]
+    [MethodDataSource(nameof(BoundaryResponses))]
+    public async Task CreateSession_accepts_values_at_the_contract_limits(string name, Action<Wire.CreateSshSessionResponse> mutate)
+    {
+        var response = ValidResponse();
+        mutate(response);
+        using var client = ClientTests.NewClient(Session(response));
+
+        var session = await client.Ssh.CreateSessionAsync("sb");
+
+        await Assert.That(session.Token).IsEqualTo(response.Token);
+        await Assert.That(session.GatewayHost).IsEqualTo(response.GatewayHost);
+        await Assert.That(session.GatewayPort).IsEqualTo((int)response.GatewayPort);
+        await Assert.That(name).IsNotNull();
+    }
+
+    [Test]
+    public async Task CreateSession_validates_the_sandbox_before_calling_the_gateway()
+    {
+        var invoker = Session();
+        using var client = ClientTests.NewClient(invoker);
+
+        await Assert.That(async () => await client.Ssh.CreateSessionAsync(" ")).Throws<ArgumentException>();
+
+        await Assert.That(invoker.CountOf("CreateSshSession")).IsEqualTo(0);
+    }
+
     [Test]
     public async Task Validate_checks_the_expected_sandbox_id()
     {
         SshClient.Validate(ValidResponse(), "id-1");
 
         var ex = await Assert.That(() => SshClient.Validate(ValidResponse(), "other")).Throws<OpenShellException>();
-        await Assert.That(ex!.Message).Contains("other");
+        await Assert.That(ex!.Message).IsEqualTo("CreateSshSession response sandbox_id must match requested sandbox 'other'");
+    }
+
+    [Test]
+    public async Task RevokeSession_does_not_allow_missing_by_default()
+    {
+        Wire.RevokeSshSessionRequest? seen = null;
+        var invoker = new FakeCallInvoker().Unary<Wire.RevokeSshSessionRequest, Wire.RevokeSshSessionResponse>("RevokeSshSession", r =>
+        {
+            seen = r;
+            return new Wire.RevokeSshSessionResponse { Outcome = Wire.DeletionOutcome.Completed };
+        });
+        using var client = ClientTests.NewClient(invoker);
+
+        await client.Ssh.RevokeSessionAsync("tok");
+
+        await Assert.That(seen!.AllowMissing).IsFalse();
     }
 
     [Test]
@@ -229,8 +290,27 @@ public class SshClientTests
         var ex = await Assert.That(async () => await client.Ssh.TunnelAsync("sb")).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).Contains("sandbox_id does not match the requested sandbox");
         await Assert.That(invoker.CountOf("RevokeSshSession")).IsEqualTo(1);
         await Assert.That(invoker.CountOf("ForwardTcp")).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Tunnel_skips_the_id_check_when_the_sandbox_reports_no_id_and_defaults_the_service_id()
+    {
+        var invoker = new FakeCallInvoker()
+            .Unary<Wire.GetSandboxRequest, Wire.SandboxResponse>("GetSandbox", _ => ClientTests.SandboxReply("sb", id: ""))
+            .Unary<Wire.CreateSshSessionRequest, Wire.CreateSshSessionResponse>("CreateSshSession", _ => ValidResponse("someone-else"))
+            .Duplex<Wire.TcpForwardFrame, Wire.TcpForwardFrame>("ForwardTcp", Relay.Echo)
+            .Unary<Wire.RevokeSshSessionRequest, Wire.RevokeSshSessionResponse>("RevokeSshSession", _ => new Wire.RevokeSshSessionResponse());
+        using var client = ClientTests.NewClient(invoker);
+
+        var tunnel = await client.Ssh.TunnelAsync("sb");
+        await tunnel.DisposeAsync();
+
+        var init = Relay.Channel(invoker).Received[0].Init;
+        await Assert.That(init.ServiceId).IsEqualTo("");
+        await Assert.That(invoker.CountOf("RevokeSshSession")).IsEqualTo(1);
     }
 
     [Test]

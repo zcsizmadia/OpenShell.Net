@@ -14,26 +14,31 @@ namespace OpenShell.Oidc;
 internal sealed class CallbackServer : IAsyncDisposable
 {
     private const int MaxHeadBytes = 8192;
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
 
     private readonly TcpListener _listener;
     private readonly string _expectedState;
+    private readonly TimeSpan _requestTimeout;
     private readonly CancellationTokenSource _stop = new();
     private readonly TaskCompletionSource<string> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _acceptLoop;
 
-    private CallbackServer(TcpListener listener, string expectedState)
+    private CallbackServer(TcpListener listener, string expectedState, TimeSpan requestTimeout)
     {
         _listener = listener;
         _expectedState = expectedState;
+        _requestTimeout = requestTimeout;
         Port = ((IPEndPoint)listener.LocalEndpoint).Port;
         _acceptLoop = Task.Run(AcceptLoopAsync);
     }
 
     public int Port { get; }
 
-    /// <summary>Starts listening on 127.0.0.1, or returns null when the port is unavailable.</summary>
-    public static CallbackServer? TryStart(int port, string expectedState)
+    /// <summary>
+    /// Starts listening on 127.0.0.1, or returns null when the port is unavailable. A connection that has not sent its
+    /// request line within <paramref name="requestTimeout"/> (10 seconds by default) is dropped.
+    /// </summary>
+    public static CallbackServer? TryStart(int port, string expectedState, TimeSpan? requestTimeout = null)
     {
         var listener = new TcpListener(IPAddress.Loopback, port);
         try
@@ -45,7 +50,7 @@ internal sealed class CallbackServer : IAsyncDisposable
             return null;
         }
 
-        return new CallbackServer(listener, expectedState);
+        return new CallbackServer(listener, expectedState, requestTimeout ?? DefaultRequestTimeout);
     }
 
     /// <summary>Completes with the authorization code, or faults when the provider reports an error.</summary>
@@ -55,33 +60,31 @@ internal sealed class CallbackServer : IAsyncDisposable
     {
         await _stop.CancelAsync().ConfigureAwait(false);
         _listener.Stop();
-        try
-        {
-            await _acceptLoop.ConfigureAwait(false);
-        }
-        catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException)
-        {
-            // Expected while shutting down.
-        }
 
+        // Never faults: TryAcceptAsync turns every shutdown error into the end of the loop.
+        await _acceptLoop.ConfigureAwait(false);
         _stop.Dispose();
     }
 
     private async Task AcceptLoopAsync()
     {
-        while (!_stop.IsCancellationRequested)
+        while (await TryAcceptAsync().ConfigureAwait(false) is { } client)
         {
-            TcpClient client;
-            try
-            {
-                client = await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException)
-            {
-                return;
-            }
-
             _ = HandleAsync(client);
+        }
+    }
+
+    /// <summary>The next connection, or null once the server is shutting down.</summary>
+    private async Task<TcpClient?> TryAcceptAsync()
+    {
+        try
+        {
+            return await _listener.AcceptTcpClientAsync(_stop.Token).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException or InvalidOperationException)
+        {
+            // InvalidOperationException: the listener was stopped before Accept was called.
+            return null;
         }
     }
 
@@ -92,7 +95,7 @@ internal sealed class CallbackServer : IAsyncDisposable
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-                timeout.CancelAfter(RequestTimeout);
+                timeout.CancelAfter(_requestTimeout);
                 var stream = client.GetStream();
                 var requestLine = await ReadRequestLineAsync(stream, timeout.Token).ConfigureAwait(false);
                 var (status, body) = Process(requestLine);
