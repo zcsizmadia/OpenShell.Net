@@ -31,6 +31,25 @@ public sealed partial class FakeGateway
     }
 
     /// <summary>
+    /// Leaves a configuration update pending on a sandbox, as an update interrupted after the gateway admitted it does.
+    /// Start and stop then fail until <see cref="ISandboxClient.ResumePendingUpdateAsync"/> applies it.
+    /// </summary>
+    /// <param name="sandbox">The sandbox name.</param>
+    /// <param name="update">The admitted change.</param>
+    /// <param name="workspace">The workspace; defaults to the gateway default workspace.</param>
+    public void SetPendingUpdate(string sandbox, SandboxUpdate update, string? workspace = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sandbox);
+        ArgumentNullException.ThrowIfNull(update);
+        lock (Sync)
+        {
+            var entry = FindSandbox(workspace ?? Options.DefaultWorkspace, sandbox);
+            entry.PendingUpdate = update;
+            Touch(entry);
+        }
+    }
+
+    /// <summary>
     /// Reports what the sandbox supervisor observed for its endpoints, as a real supervisor does through the gateway.
     /// Reads return the values on <see cref="Sandbox.EndpointStatuses"/> and <see cref="Sandbox.LastTokenGrantFailure"/>,
     /// and watchers see the change.

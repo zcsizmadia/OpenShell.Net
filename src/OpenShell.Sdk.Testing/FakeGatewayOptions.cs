@@ -39,6 +39,12 @@ public sealed record FakeGatewayOptions
     public bool SupportsSuspendResume { get; init; } = true;
 
     /// <summary>
+    /// Whether the gateway serves sandbox updates (<c>[openshell.gateway] enable_sandbox_updates</c>, off by default on a
+    /// real gateway). When <see langword="false"/>, updates fail with <see cref="OpenShellErrorKind.Conflict"/>.
+    /// </summary>
+    public bool SandboxUpdatesEnabled { get; init; } = true;
+
+    /// <summary>
     /// How long a sandbox deletion takes. Zero deletes immediately and reports <see cref="DeletionOutcome.Completed"/>;
     /// a positive delay reports <see cref="DeletionOutcome.Accepted"/> and removes the sandbox after the delay.
     /// </summary>

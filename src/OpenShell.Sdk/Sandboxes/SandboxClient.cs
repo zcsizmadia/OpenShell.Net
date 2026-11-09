@@ -44,6 +44,31 @@ public interface ISandboxClient
     /// </summary>
     ValueTask<Sandbox> ResumeAsync(string name, ResumeSandboxOptions? options = null, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Changes the configuration of a stopped sandbox through the <c>SandboxUpdates</c> service, which the gateway serves
+    /// only when <c>[openshell.gateway] enable_sandbox_updates = true</c>. The update does not start the sandbox.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="expectedResourceVersion"/> is required (compare-and-swap): a stale version fails with
+    /// <see cref="OpenShellErrorKind.Conflict"/> (<c>ABORTED</c>). The sandbox must be stopped, otherwise the call fails with
+    /// <see cref="OpenShellErrorKind.Conflict"/> (<c>FAILED_PRECONDITION</c>), as it does while the feature is disabled.
+    /// Workload changes (image, command, environment) a compute driver cannot apply fail with
+    /// <see cref="OpenShellErrorKind.Unimplemented"/>; label and annotation changes work on every driver.
+    /// </para>
+    /// <para>
+    /// A failed or interrupted update leaves a pending intent that blocks start and stop until
+    /// <see cref="ResumePendingUpdateAsync"/> completes it.
+    /// </para>
+    /// </remarks>
+    ValueTask<Sandbox> UpdateAsync(string name, ulong expectedResourceVersion, SandboxUpdate update, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Completes a sandbox update that failed or was interrupted, by sending an update with the current resource version
+    /// and no fields. Fails with <see cref="OpenShellErrorKind.Conflict"/> when no update is pending.
+    /// </summary>
+    ValueTask<Sandbox> ResumePendingUpdateAsync(string name, ulong expectedResourceVersion, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default);
+
     /// <summary>Deletes a sandbox. Inspect <see cref="DeletionResult.Outcome"/>; <c>Accepted</c> means cleanup is pending.</summary>
     ValueTask<DeletionResult> DeleteAsync(string name, DeleteOptions? options = null, CancellationToken cancellationToken = default);
 
@@ -161,6 +186,66 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
             RestartIfRestoreFails = options?.RestartIfRestoreFails ?? false,
         };
         return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.Grpc.ResumeSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
+    }
+
+    public ValueTask<Sandbox> UpdateAsync(string name, ulong expectedResourceVersion, SandboxUpdate update, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.IsEmpty)
+        {
+            throw new ArgumentException("select at least one field to update; use ResumePendingUpdateAsync to complete a pending update", nameof(update));
+        }
+
+        if (update.Image is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(update.Image, nameof(update));
+        }
+
+        return SendUpdateAsync(name, expectedResourceVersion, update, options, cancellationToken);
+    }
+
+    public ValueTask<Sandbox> ResumePendingUpdateAsync(string name, ulong expectedResourceVersion, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default) =>
+        SendUpdateAsync(name, expectedResourceVersion, new SandboxUpdate(), options, cancellationToken);
+
+    private async ValueTask<Sandbox> SendUpdateAsync(string name, ulong expectedResourceVersion, SandboxUpdate update, UpdateSandboxOptions? options, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentOutOfRangeException.ThrowIfZero(expectedResourceVersion);
+        var request = new Wire.UpdateSandboxRequest
+        {
+            WorkspaceScope = ClientCore.Scope(workspace),
+            Name = name,
+            ExpectedResourceVersion = expectedResourceVersion,
+            RequestId = options?.RequestId ?? "",
+        };
+        if (update.Image is { } image)
+        {
+            request.Image = image;
+        }
+
+        if (update.Command is { } command)
+        {
+            request.Command = new Wire.SandboxCommandUpdate();
+            request.Command.Argv.AddRange(command);
+        }
+
+        request.Environment = MapUpdate(update.Environment);
+        request.Labels = MapUpdate(update.Labels);
+        request.Annotations = MapUpdate(update.Annotations);
+        return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.SandboxUpdates.UpdateSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
+    }
+
+    // Presence is the change marker: null leaves the field unset (unchanged), an empty map is sent (replace with none).
+    private static Wire.SandboxMapUpdate? MapUpdate(IReadOnlyDictionary<string, string>? values)
+    {
+        if (values is null)
+        {
+            return null;
+        }
+
+        var update = new Wire.SandboxMapUpdate();
+        SandboxMapping.AddAll(update.Values, values);
+        return update;
     }
 
     public ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>

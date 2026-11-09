@@ -46,6 +46,7 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
         return ValueTask.FromResult(gateway.Run("Sandboxes.Stop", workspace, name, cancellationToken, () =>
         {
             var entry = gateway.FindSandbox(workspace, name);
+            RejectPendingUpdate(entry);
             if (entry.Phase is SandboxPhase.Stopped or SandboxPhase.Stopping)
             {
                 return gateway.Project(entry);
@@ -72,6 +73,7 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
         return ValueTask.FromResult(gateway.Run("Sandboxes.Start", workspace, name, cancellationToken, () =>
         {
             var entry = gateway.FindSandbox(workspace, name);
+            RejectPendingUpdate(entry);
             if (entry.Phase is SandboxPhase.Ready or SandboxPhase.Starting or SandboxPhase.Provisioning)
             {
                 return gateway.Project(entry);
@@ -181,6 +183,130 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
             gateway.Touch(entry);
             return new DeletionResult(DeletionOutcome.Accepted, entry.Id);
         }));
+    }
+
+    public ValueTask<Sandbox> UpdateAsync(string name, ulong expectedResourceVersion, SandboxUpdate update, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.IsEmpty)
+        {
+            throw new ArgumentException("select at least one field to update; use ResumePendingUpdateAsync to complete a pending update", nameof(update));
+        }
+
+        return Update(name, expectedResourceVersion, update, cancellationToken);
+    }
+
+    public ValueTask<Sandbox> ResumePendingUpdateAsync(string name, ulong expectedResourceVersion, UpdateSandboxOptions? options = null, CancellationToken cancellationToken = default) =>
+        Update(name, expectedResourceVersion, null, cancellationToken);
+
+    /// <summary>The gateway's UpdateSandbox rules (NVIDIA/OpenShell v0.1.7); a null update resumes a pending one.</summary>
+    private ValueTask<Sandbox> Update(string name, ulong expectedResourceVersion, SandboxUpdate? update, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentOutOfRangeException.ThrowIfZero(expectedResourceVersion);
+        return ValueTask.FromResult(gateway.Run("Sandboxes.Update", workspace, name, cancellationToken, () =>
+        {
+            var entry = gateway.FindSandbox(workspace, name);
+            if (!gateway.Options.SandboxUpdatesEnabled)
+            {
+                throw FakeGateway.Conflict("sandbox updates are disabled on this gateway");
+            }
+
+            if (update is not null)
+            {
+                if (update.Image is { } image && (image.Length == 0 || image.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))))
+                {
+                    throw FakeGateway.Invalid("image must be a nonempty OCI reference without whitespace");
+                }
+
+                RejectSystemKeys(update.Labels);
+                RejectSystemKeys(update.Annotations);
+            }
+
+            if (entry.ResourceVersion != expectedResourceVersion)
+            {
+                throw FakeGateway.Conflict($"sandbox '{name}' resource version {entry.ResourceVersion} does not match expected {expectedResourceVersion}");
+            }
+
+            if (entry.Phase != SandboxPhase.Stopped)
+            {
+                throw FakeGateway.Conflict("sandbox must be Stopped before updating its configuration");
+            }
+
+            if (update is null)
+            {
+                update = entry.PendingUpdate ?? throw FakeGateway.Conflict("sandbox has no pending update to resume");
+            }
+            else if (entry.PendingUpdate is not null)
+            {
+                throw FakeGateway.Conflict("sandbox has a pending update; resume it before starting another");
+            }
+
+            Apply(entry, update);
+            entry.PendingUpdate = null;
+            gateway.Touch(entry);
+            return gateway.Project(entry);
+        }));
+    }
+
+    private static void Apply(SandboxEntry entry, SandboxUpdate update)
+    {
+        var spec = entry.Spec;
+        if (update.Image is { } image)
+        {
+            spec = spec.Template is { } template ? spec with { Image = image, Template = template with { Image = image } } : spec with { Image = image };
+        }
+
+        if (update.Command is { } command)
+        {
+            spec = spec with { Command = [.. command] };
+        }
+
+        if (update.Environment is { } environment)
+        {
+            spec = spec with { Environment = new Dictionary<string, string>(environment, StringComparer.Ordinal) };
+        }
+
+        entry.Spec = spec;
+        Replace(update.Labels, entry.Labels);
+        Replace(update.Annotations, entry.Annotations);
+    }
+
+    private static void Replace(IReadOnlyDictionary<string, string>? values, Dictionary<string, string> target)
+    {
+        if (values is not null)
+        {
+            target.Clear();
+            Copy(values, target);
+        }
+    }
+
+    private static readonly string[] SystemKeys =
+    [
+        "openshell.nvidia.com/retention",
+        "openshell.ai/managed-by",
+        "openshell.ai/sandbox-id",
+        "openshell.ai/sandbox-name",
+        "openshell.ai/sandbox-namespace",
+    ];
+
+    private static void RejectSystemKeys(IReadOnlyDictionary<string, string>? values)
+    {
+        foreach (var key in values?.Keys ?? [])
+        {
+            if (key.StartsWith(FakeGateway.ReservedAnnotationPrefix, StringComparison.Ordinal) || SystemKeys.Contains(key, StringComparer.Ordinal))
+            {
+                throw FakeGateway.Invalid("system metadata cannot be updated");
+            }
+        }
+    }
+
+    private static void RejectPendingUpdate(SandboxEntry entry)
+    {
+        if (entry.PendingUpdate is not null)
+        {
+            throw FakeGateway.Conflict($"sandbox '{entry.Name}' has a pending configuration update; resume it with ResumePendingUpdateAsync");
+        }
     }
 
     public ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>

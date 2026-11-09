@@ -91,6 +91,22 @@ await client.Sandboxes.WaitReadyAsync("sdk-example");      // -> Ready
 
 Repeating a suspend while suspending or suspended, or a resume while it is starting, is safe. `ResumeSandboxOptions.RestartIfRestoreFails` boots the workload cleanly when the memory state cannot be restored, instead of failing. `StopAsync` and `StartAsync` also work on a suspended sandbox, but they discard the retained state. `WaitReadyAsync` and `WaitStoppedAsync` fail fast on a suspended sandbox instead of waiting for a phase it will not reach on its own.
 
+### Update a stopped sandbox
+
+A gateway with `[openshell.gateway] enable_sandbox_updates = true` can change a stopped sandbox in place. Pass the resource version you read (compare-and-swap); set only what changes, because a null property is left alone while an empty collection replaces the value with nothing. The update does not start the sandbox.
+
+```csharp
+var sandbox = await client.Sandboxes.GetAsync("sdk-example");   // must be Stopped
+sandbox = await client.Sandboxes.UpdateAsync("sdk-example", sandbox.ResourceVersion, new SandboxUpdate
+{
+    Image = "registry.example.com/team/python-agent:1.1",
+    Environment = new Dictionary<string, string> { ["MODE"] = "prod" },
+});
+await client.Sandboxes.StartAsync("sdk-example");
+```
+
+A stale version fails with `Conflict` (`ABORTED`); a running sandbox, or a gateway with the feature off, with `Conflict` (`FAILED_PRECONDITION`). Image, command, and environment changes need compute-driver support (Kubernetes at first) and otherwise fail with `Unimplemented`; label and annotation changes work everywhere, and system keys are rejected. If an update fails part-way, it stays pending and blocks start and stop: call `ResumePendingUpdateAsync(name, currentResourceVersion)` to finish it. With `UpdateSandboxOptions.RequestId` the gateway admits a retried update at most once.
+
 ### Endpoint status
 
 `Sandbox.EndpointStatuses` reports what the sandbox supervisor last observed for each declared endpoint: host, ports, path, the latest `EndpointResult`, and when it was reported. When a gateway-managed token grant fails, `EndpointStatus.LastFailure` and `Sandbox.LastTokenGrantFailure` carry the classified cause: a stable `Code` and `Stage` (lower_snake_case), the `RecoveryAction` to take, the provider and credential key, the upstream HTTP status, and the `x-openshell-request-id` the workload saw, for correlating with gateway logs. In tests, `FakeGateway.ReportEndpointStatuses` sets them.
