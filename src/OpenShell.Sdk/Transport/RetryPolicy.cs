@@ -112,8 +112,9 @@ internal sealed partial class RetryCallInvoker(
             for (var attempt = 1; ; attempt++)
             {
                 state.Current?.Dispose();
-                var call = inner.AsyncUnaryCall(method, host, options, request);
-                state.Current = call;
+                // Owned by the state: the AsyncUnaryCall handed to the caller disposes the current attempt.
+                state.Current = inner.AsyncUnaryCall(method, host, options, request);
+                var call = state.Current;
                 try
                 {
                     var response = await call.ResponseAsync.ConfigureAwait(false);
