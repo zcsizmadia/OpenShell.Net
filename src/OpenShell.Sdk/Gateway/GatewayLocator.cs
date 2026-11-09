@@ -237,18 +237,8 @@ public sealed class GatewayLocator
     /// </summary>
     private static string? ReadActiveFile(string path, List<string> problems)
     {
-        string text;
-        try
+        if (ReadOptionalText(path, problems) is not { } text)
         {
-            text = File.ReadAllText(path);
-        }
-        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            problems.Add($"cannot read {path}");
             return null;
         }
 
@@ -270,6 +260,26 @@ public sealed class GatewayLocator
         }
 
         return name;
+    }
+
+    /// <summary>The file's text; null when it is missing, and null with a problem recorded when it cannot be read.</summary>
+    private static string? ReadOptionalText(string path, List<string> problems)
+    {
+        // Returning from inside the try (rather than assigning a local declared outside it) keeps Stryker able to
+        // mutate the caller: a mutated catch would otherwise leave the local unassigned (CS0165).
+        try
+        {
+            return File.ReadAllText(path);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            problems.Add($"cannot read {path}");
+            return null;
+        }
     }
 
     private string UserGatewayDirectory(string name) => Path.Combine(UserConfigDirectory, GatewaySubdir, name);
@@ -315,21 +325,7 @@ public sealed class GatewayLocator
 
     private static GatewayMetadata ParseMetadata(string name, string directory, GatewayConfigSource source, string stateDirectory)
     {
-        var path = Path.Combine(directory, MetadataFile);
-        GatewayMetadataDto? meta;
-        try
-        {
-            meta = JsonSerializer.Deserialize(File.ReadAllText(path), SdkJsonContext.Default.GatewayMetadataDto);
-        }
-        catch (JsonException e)
-        {
-            throw Invalid($"invalid JSON in {MetadataFile} for gateway '{name}'", e);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw Invalid($"cannot read {MetadataFile} for gateway '{name}'", e);
-        }
-
+        var meta = ReadMetadataFile(name, directory);
         return meta is { GatewayEndpoint: { Length: > 0 } gatewayEndpoint }
             ? new GatewayMetadata
             {
@@ -345,6 +341,22 @@ public sealed class GatewayLocator
                 OidcScopes = NullIfEmpty(meta.OidcScopes),
             }
             : throw Invalid($"missing gateway_endpoint in {MetadataFile} for gateway '{name}'");
+    }
+
+    private static GatewayMetadataDto? ReadMetadataFile(string name, string directory)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(directory, MetadataFile)), SdkJsonContext.Default.GatewayMetadataDto);
+        }
+        catch (JsonException e)
+        {
+            throw Invalid($"invalid JSON in {MetadataFile} for gateway '{name}'", e);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw Invalid($"cannot read {MetadataFile} for gateway '{name}'", e);
+        }
     }
 
     private static Uri ParseEndpoint(string value, string name) =>
@@ -385,7 +397,7 @@ public sealed class GatewayLocator
             }
         }
 
-        names.Sort(StringComparer.Ordinal);
+        // No sort here: List() sorts the merged result, and shadowing depends only on the user root coming first.
         return names;
     }
 
