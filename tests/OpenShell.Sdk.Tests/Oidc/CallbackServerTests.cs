@@ -164,7 +164,7 @@ public class CallbackServerTests
             Skip.Test("IPv6 is not available on this host");
         }
 
-        var probe = new TcpListener(IPAddress.IPv6Loopback, 0);
+        using var probe = new TcpListener(IPAddress.IPv6Loopback, 0);
         try
         {
             probe.Start();
@@ -172,10 +172,6 @@ public class CallbackServerTests
         catch (SocketException)
         {
             Skip.Test("the IPv6 loopback address cannot be bound on this host");
-        }
-        finally
-        {
-            probe.Stop();
         }
     }
 
@@ -203,21 +199,14 @@ public class CallbackServerTests
     public async Task A_taken_IPv6_port_leaves_the_IPv4_listener_working()
     {
         RequireIPv6Loopback();
-        var squatter = new TcpListener(IPAddress.IPv6Loopback, 0);
+        using var squatter = new TcpListener(IPAddress.IPv6Loopback, 0);
         squatter.Start();
-        try
-        {
-            var port = ((IPEndPoint)squatter.LocalEndpoint).Port;
-            await using var server = CallbackServer.TryStart(port, "s")!;
+        var port = ((IPEndPoint)squatter.LocalEndpoint).Port;
+        await using var server = CallbackServer.TryStart(port, "s")!;
 
-            await Assert.That(server.ListensOnIPv6).IsFalse();
-            await Assert.That(await Get(server.Port, "/callback?code=v4&state=s")).Contains("200 OK");
-            await Assert.That(await server.WaitForCodeAsync().WaitAsync(TimeSpan.FromSeconds(5))).IsEqualTo("v4");
-        }
-        finally
-        {
-            squatter.Stop();
-        }
+        await Assert.That(server.ListensOnIPv6).IsFalse();
+        await Assert.That(await Get(server.Port, "/callback?code=v4&state=s")).Contains("200 OK");
+        await Assert.That(await server.WaitForCodeAsync().WaitAsync(TimeSpan.FromSeconds(5))).IsEqualTo("v4");
     }
 
     [Test]

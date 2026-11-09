@@ -109,24 +109,18 @@ internal sealed class ClientCore : IDisposable
         Action? onUnrouted = null)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
-        var (active, hasFirst) = await OpenFirstAsync(call, replica, onUnrouted, cancellationToken).ConfigureAwait(false);
-        try
+        var opened = await OpenFirstAsync(call, replica, onUnrouted, cancellationToken).ConfigureAwait(false);
+        using var active = opened.Call;
+        if (!opened.HasFirst)
         {
-            var stream = active.ResponseStream;
-            if (!hasFirst)
-            {
-                yield break;
-            }
-
-            yield return stream.Current;
-            while (await MoveNextAsync(stream, cancellationToken).ConfigureAwait(false))
-            {
-                yield return stream.Current;
-            }
+            yield break;
         }
-        finally
+
+        var stream = active.ResponseStream;
+        yield return stream.Current;
+        while (await MoveNextAsync(stream, cancellationToken).ConfigureAwait(false))
         {
-            active.Dispose();
+            yield return stream.Current;
         }
     }
 

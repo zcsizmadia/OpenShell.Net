@@ -113,11 +113,12 @@ internal sealed class RootfsClient(ClientCore core, string workspace) : IRootfsC
     internal static async ValueTask CopyWithLimitAsync(string source, string destination, ulong limit, CancellationToken cancellationToken)
     {
         await using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, useAsync: true);
-        var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, useAsync: true);
+        var created = false;
         try
         {
-            await using (output.ConfigureAwait(false))
+            await using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferSize, useAsync: true))
             {
+                created = true;
                 var buffer = new byte[CopyBufferSize];
                 ulong total = 0;
                 int read;
@@ -134,9 +135,10 @@ internal sealed class RootfsClient(ClientCore core, string workspace) : IRootfsC
                 }
             }
         }
-        catch
+        catch when (created)
         {
-            // The output is closed by now, so the partial archive can be removed.
+            // The output is closed by now, so the partial archive can be removed. A destination that could not even be
+            // opened is left alone.
             TryDelete(destination);
             throw;
         }
