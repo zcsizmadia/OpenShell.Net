@@ -36,18 +36,11 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
             return inner.BlockingUnaryCall(method, host, options, request);
         }
 
+        // Invoke records a failure itself.
         var scope = CallScope.Start(method.ServiceName, method.Name);
-        try
-        {
-            var response = scope.Invoke(() => inner.BlockingUnaryCall(method, host, options, request));
-            scope.Complete(null);
-            return response;
-        }
-        catch (Exception e)
-        {
-            scope.Complete(e);
-            throw;
-        }
+        var response = scope.Invoke(() => inner.BlockingUnaryCall(method, host, options, request));
+        scope.Complete(null);
+        return response;
     }
 
     public override AsyncServerStreamingCall<TResponse> AsyncServerStreamingCall<TRequest, TResponse>(
