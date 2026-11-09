@@ -66,6 +66,7 @@ public class TransportTests
     public async Task Unsupported_scheme_is_rejected(string address)
     {
         var ex = await Assert.That(() => ChannelFactory.Validate(Options(address))).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).IsEqualTo("gateway address must be an absolute http:// or https:// URL");
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
     }
 
@@ -73,14 +74,25 @@ public class TransportTests
     public async Task Relative_address_is_rejected()
     {
         var options = new OpenShellClientOptions { Address = new Uri("/relative", UriKind.Relative) };
-        await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        var ex = await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).IsEqualTo("gateway address must be an absolute http:// or https:// URL");
+    }
+
+    [Test]
+    public async Task Missing_address_is_rejected()
+    {
+        var ex = await Assert.That(() => ChannelFactory.Validate(new OpenShellClientOptions { Address = null! })).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).IsEqualTo("gateway address is required");
     }
 
     [Test]
     public async Task Blank_default_workspace_is_rejected()
     {
         var options = new OpenShellClientOptions { Address = new Uri("http://localhost"), DefaultWorkspace = " " };
-        await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        var ex = await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).IsEqualTo("default workspace must not be empty");
     }
 
     [Test]
@@ -96,7 +108,8 @@ public class TransportTests
 #endif
 
         var options = Options("https://gateway.example.com", tls: new TlsOptions { ClientCertificate = publicOnly });
-        await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        var ex = await Assert.That(() => ChannelFactory.Validate(options)).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).IsEqualTo("mTLS client certificate must include its private key");
     }
 
     [Test]
@@ -124,6 +137,64 @@ public class TransportTests
         using var insecure = ChannelFactory.Create(Options("https://gateway.example.com", tls: new TlsOptions { InsecureSkipVerify = true }));
         using var mtls = ChannelFactory.Create(Options("https://gateway.example.com", tls: new TlsOptions { ClientCertificate = ca }));
         await Assert.That(pinned.Target).Contains("gateway.example.com");
+    }
+
+    [Test]
+    public async Task Sockets_handler_keeps_long_lived_http2_connections()
+    {
+        using var handler = ChannelFactory.BuildSocketsHandler(Options("http://localhost:9"));
+
+        await Assert.That(handler.PooledConnectionIdleTimeout).IsEqualTo(Timeout.InfiniteTimeSpan);
+        await Assert.That(handler.KeepAlivePingDelay).IsEqualTo(TimeSpan.FromSeconds(60));
+        await Assert.That(handler.KeepAlivePingTimeout).IsEqualTo(TimeSpan.FromSeconds(30));
+        await Assert.That(handler.EnableMultipleHttp2Connections).IsTrue();
+    }
+
+    [Test]
+    public async Task Sockets_handler_applies_tls_options_only_to_https()
+    {
+        using var key = ECDsa.Create();
+        var req = new CertificateRequest("CN=ca", key, HashAlgorithmName.SHA256);
+        using var ca = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+        var roots = new X509Certificate2Collection(ca);
+        var sender = new object();
+
+        using var plain = ChannelFactory.BuildSocketsHandler(Options("http://localhost:9", tls: new TlsOptions { InsecureSkipVerify = true, ClientCertificate = ca }));
+        using var noTls = ChannelFactory.BuildSocketsHandler(Options("https://gateway.example.com"));
+        using var insecure = ChannelFactory.BuildSocketsHandler(Options("https://gateway.example.com", tls: new TlsOptions { InsecureSkipVerify = true, CaCertificates = roots }));
+        using var pinned = ChannelFactory.BuildSocketsHandler(Options("https://gateway.example.com", tls: new TlsOptions { CaCertificates = roots }));
+        using var mtls = ChannelFactory.BuildSocketsHandler(Options("https://gateway.example.com", tls: new TlsOptions { ClientCertificate = ca }));
+
+        await Assert.That(plain.SslOptions.RemoteCertificateValidationCallback).IsNull();
+        await Assert.That(plain.SslOptions.ClientCertificates).IsNull();
+        await Assert.That(noTls.SslOptions.RemoteCertificateValidationCallback).IsNull();
+
+        // Skip-verify wins over pinned roots and accepts anything; pinned roots still reject a name mismatch.
+        await Assert.That(insecure.SslOptions.RemoteCertificateValidationCallback!(sender, ca, null, SslPolicyErrors.RemoteCertificateNameMismatch)).IsTrue();
+        await Assert.That(pinned.SslOptions.RemoteCertificateValidationCallback!(sender, ca, null, SslPolicyErrors.RemoteCertificateNameMismatch)).IsFalse();
+        await Assert.That(pinned.SslOptions.RemoteCertificateValidationCallback!(sender, ca, null, SslPolicyErrors.None)).IsTrue();
+
+        await Assert.That(mtls.SslOptions.ClientCertificates!.Cast<X509Certificate>().Single()).IsSameReferenceAs(ca);
+        await Assert.That(mtls.SslOptions.RemoteCertificateValidationCallback).IsNull();
+    }
+
+    [Test]
+    public async Task Supplied_http_handler_is_wrapped_and_disposed_with_the_channel()
+    {
+        var supplied = new CapturingHandler();
+        var options = Options("http://localhost:9") with { HttpHandler = supplied };
+
+        using (var handler = ChannelFactory.CreateHandler(Options("http://localhost:9")))
+        {
+            await Assert.That(handler.InnerHandler).IsTypeOf<SocketsHttpHandler>();
+        }
+
+        await Assert.That(ChannelFactory.CreateHandler(options).InnerHandler).IsSameReferenceAs(supplied);
+
+        var channel = ChannelFactory.Create(options);
+        await Assert.That(supplied.Disposed).IsFalse();
+        channel.Dispose();
+        await Assert.That(supplied.Disposed).IsTrue();
     }
 
     [Test]
@@ -167,11 +238,23 @@ public class TransportTests
         var pinned = new X509Certificate2Collection(root);
         await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateChainErrors)).IsTrue();
         await Assert.That(ChannelFactory.ValidateAgainst(pinned, other, SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
+
+        // A missing certificate or a name mismatch is never rescued by the pinned roots, alone or with chain errors.
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateNotAvailable)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
     }
 
     private sealed class CapturingHandler : HttpMessageHandler
     {
         public HttpRequestMessage? Seen { get; private set; }
+
+        public bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
