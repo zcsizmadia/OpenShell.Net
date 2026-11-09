@@ -42,22 +42,24 @@ internal static class ChannelFactory
     public static GrpcChannel Create(OpenShellClientOptions options)
     {
         Validate(options);
-        var inner = options.HttpHandler ?? BuildSocketsHandler(options);
-        var handler = new AuthHandler(options.Auth, inner);
         return GrpcChannel.ForAddress(options.Address, new GrpcChannelOptions
         {
-            HttpHandler = handler,
+            HttpHandler = CreateHandler(options),
             DisposeHttpClient = true,
             MaxReceiveMessageSize = null,
             LoggerFactory = options.LoggerFactory,
         });
     }
 
+    /// <summary>The handler chain: authentication over the caller-supplied handler or a configured sockets handler.</summary>
+    internal static AuthHandler CreateHandler(OpenShellClientOptions options) =>
+        new(options.Auth, options.HttpHandler ?? BuildSocketsHandler(options));
+
     internal static bool IsLoopback(Uri address) =>
         address.IsLoopback
         || (IPAddress.TryParse(address.Host.Trim('[', ']'), out var ip) && IPAddress.IsLoopback(ip));
 
-    private static SocketsHttpHandler BuildSocketsHandler(OpenShellClientOptions options)
+    internal static SocketsHttpHandler BuildSocketsHandler(OpenShellClientOptions options)
     {
         var handler = new SocketsHttpHandler
         {
