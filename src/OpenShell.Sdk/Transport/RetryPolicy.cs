@@ -62,10 +62,9 @@ public sealed record RetryPolicy
 
 /// <summary>Wraps a <see cref="CallInvoker"/> so idempotent unary calls survive transient failures.</summary>
 internal sealed partial class RetryCallInvoker(
-    CallInvoker inner, RetryPolicy policy, TimeProvider time, Func<double>? random = null, ILogger? logger = null) : CallInvoker
+    CallInvoker inner, RetryPolicy policy, TimeProvider time, ILogger? logger = null) : CallInvoker
 {
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
-    private readonly Func<double> _random = random ?? Random.Shared.NextDouble;
 
     public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
         Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request)
@@ -140,7 +139,7 @@ internal sealed partial class RetryCallInvoker(
             return false;
         }
 
-        delay = policy.DelayBefore(attempt, _random);
+        delay = policy.DelayBefore(attempt, Random.Shared.NextDouble);
 
         // Wait at least as long as the gateway asked (google.rpc.RetryInfo, for example on MUTATION_LOCK_TIMEOUT).
         // A request to wait longer than the policy allows ends the retries and surfaces the error with its delay.

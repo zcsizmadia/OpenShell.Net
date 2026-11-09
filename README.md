@@ -441,6 +441,17 @@ scripts/sync-upstream.sh v0.1.7    # or to a specific tag or commit
 
 A weekly workflow does this automatically. When upstream publishes a release, it opens a pull request with the synced files and the result of the full check against them.
 
+## Mutation testing
+
+[Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) (a local tool in `dotnet-tools.json`, configured in `tests/OpenShell.Sdk.Tests/stryker-config.json`) mutates `OpenShell.Sdk` and reports the changes no test catches. It runs weekly in the "Mutation testing" workflow, which uploads the HTML report; the score is a report, not a gate. To run it locally (about 7 minutes for the whole SDK):
+
+```shell
+dotnet tool restore
+cd tests/OpenShell.Sdk.Tests
+dotnet stryker                  # everything
+dotnet stryker --since main     # only code changed since main
+```
+
 ## License
 
 Apache-2.0. See [LICENSE](https://github.com/zcsizmadia/OpenShell.Net/blob/main/LICENSE) and [NOTICE](https://github.com/zcsizmadia/OpenShell.Net/blob/main/NOTICE). The vendored protos and fixtures are Copyright NVIDIA Corporation & Affiliates, also under Apache-2.0.
