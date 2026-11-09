@@ -40,11 +40,12 @@
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <!--
-      Checks the package on pack: every target framework exposes a compatible API. After the first nuget.org
-      release, set PackageValidationBaselineVersion to the latest published version so a breaking public API change
-      fails the build; intentional breaks go in a reviewed CompatibilitySuppressions.xml.
+      Checks the package on pack: every target framework exposes a compatible API, and the public API stays
+      compatible with PackageValidationBaselineVersion, the latest version on nuget.org. Raise it after each release;
+      intentional breaks go in a reviewed CompatibilitySuppressions.xml.
     -->
     <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>0.1.7</PackageValidationBaselineVersion>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)..\README.md" Pack="true" PackagePath="\" Visible="false" />

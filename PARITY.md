@@ -115,15 +115,15 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 
 | Feature | Status |
 |---|---|
-| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE; `net8.0` and `net10.0` builds (apps on .NET 11 use `net10.0`) | ✅ packed in CI with package validation; every pull request restores the packages into a consumer app on each framework and publishes a Native AOT consumer (trim and AOT warnings fail). Not yet published; `PackageValidationBaselineVersion` (API compatibility against the last release) is set once v0.1.7 is on nuget.org (#33) |
+| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE; `net8.0` and `net10.0` builds (apps on .NET 11 use `net10.0`) | ✅ packed in CI with package validation; every pull request restores the packages into a consumer app on each framework and publishes a Native AOT consumer (trim and AOT warnings fail). Published to nuget.org (0.1.7); `PackageValidationBaselineVersion` checks API compatibility against the last release |
 | `OpenShell.Net.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
 | README (overview, install, quick start) and documentation site: getting started, 18 guides (including a feature parity summary), API reference (DocFX, GitHub Pages); every snippet compiled and most run against the fake in CI | ✅ |
 | `scripts/ci.sh`, CI workflow (Linux and Windows) | ✅ runs on every pull request and on `main` |
-| nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ⚠️ written; first runs on the first release tag |
+| nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ✅ published v0.1.7 (packages, symbols, GitHub release) |
 | Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh` (optional files for fixtures newer than the release), drift check in CI | ✅ the drift check runs in CI and fails on script errors |
-| Weekly upstream sync pull request (`upstream-sync.yml`) | ⚠️ written; needs "Allow GitHub Actions to create and approve pull requests" and has not run yet |
+| Weekly upstream sync pull request (`upstream-sync.yml`) | ⚠️ enabled; has not run yet (opens a pull request when upstream releases) |
 | Editorconfig with analyzer severities and SPDX header enforcement | ✅ |
 
 ## Upstream changes after v0.1.7
