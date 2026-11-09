@@ -178,6 +178,7 @@ internal sealed class FakeConfigClient(FakeGateway gateway, string workspace) : 
     private ConfigUpdateResult Apply(ConfigUpdate update)
     {
         var kinds = (update.Policy is not null ? 1 : 0) + (update.MergeOperations is not null ? 1 : 0) + (update.SettingKey is not null ? 1 : 0);
+        FakeGateway.RejectReservedAnnotations(update.Annotations, "annotation");
         return kinds != 1
             ? throw FakeGateway.Invalid("exactly one of policy, merge operations or a setting must be supplied")
             : update.Global ? ApplyGlobal(update) : ApplySandbox(update);

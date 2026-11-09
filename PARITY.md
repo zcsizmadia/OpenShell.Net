@@ -17,7 +17,7 @@ Sources: G Go, R Rust, T TypeScript, P Python.
 | Measure | Result |
 |---|---|
 | User-facing RPCs in the `OpenShell` service | ⚠️ 65 of 67 called by the curated client; `SuspendSandbox` and `ResumeSandbox` (new in v0.1.7) are reachable only through `OpenShellClient.Raw` |
-| `SandboxUpdates` service (`UpdateSandbox`, new in v0.1.7; needs compute-driver support and explicit gateway activation) | ⬜ not wired; the generated `SandboxUpdates.SandboxUpdatesClient` is compiled into the package |
+| `SandboxUpdates` service (`UpdateSandbox`, new in v0.1.7; needs compute-driver support and explicit gateway activation) | ⚠️ raw only: `OpenShellClient.RawSandboxUpdates` |
 | Supervisor and sandbox-internal RPCs (`ConnectSupervisor`, `RelayStream`, `PeerRelay`, `Peer*`, `PushSandboxLogs`, `Report*`, `FinalizeMainProcessExit`, `GetSandboxProviderEnvironment`, `ExchangeProviderSubjectToken`, `IssueSandboxToken`, `RefreshSandboxToken`, `SubmitPolicyAnalysis`) | Excluded by design; no SDK implements them. Reachable through `OpenShellClient.Raw`. |
 | Extension services (`ComputeDriver`, `CredentialDriver`, `GatewayInterceptor`, `SupervisorMiddleware`) | Excluded: they are contracts to implement, not call |
 
@@ -44,12 +44,12 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | TCP | `ForwardAsync` (duplex stream), `ListenAsync` (local listener) | G T | ✅ |
 | Config | sandbox and gateway config, policy and setting updates, global scope | G T | ✅ |
 | Policy | draft get, approve, reject, approve all, edit, undo, clear, history, status, revisions | G | ✅ |
-| Providers | create, get, list, update, delete, ensure | G P | ✅ |
+| Providers | create, get, list (with label selector), update, delete, ensure | G P | ✅ |
 | Provider credentials | `GetCredentialsAsync` (operator-only, values redacted in `ToString`) | T P | ✅ |
 | Provider profiles | list, get, import, update, lint, delete, platform view | G | ✅ |
 | Provider refresh | status, configure, rotate, delete | G | ✅ |
 | Rootfs staging | `BeginStagingAsync`, `StageAsync`, `RootfsDriverConfig.WithStagingToken` | none | ✅ |
-| Raw access | generated gRPC client on `OpenShellClient.Raw`; `SandboxSpec.RawSpec` hook | R T | ✅ |
+| Raw access | generated gRPC clients on `OpenShellClient.Raw` and `OpenShellClient.RawSandboxUpdates`; `SandboxSpec.RawSpec` hook | R T | ✅ |
 | Pagination | `Pager<T>` (items and pages), `ToListAsync` | G R T P | ✅ |
 | Errors | `OpenShellException` with kind, gRPC status, and predicates | G R T P | ✅ |
 | Error details | `ErrorInfo`, `FieldViolations`, `RetryDelay` decoded from `google.rpc` details, validated against the call status | G R T P | ✅ |
@@ -69,7 +69,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Edge WebSocket tunnel proxy (`EdgeTunnelProxy`) | G R | ✅ |
 | Edge tunnel started automatically for `cloudflare_jwt` gateways (`EdgeTunnelMode.Auto`, owned by the client) | R | ⚠️ tested against a fake WebSocket edge, not a real Cloudflare Access edge |
 | Refusal to send credentials over plaintext to a non-loopback host | T | ✅ |
-| Retry policy (reads only by default, backoff with jitter, deadline aware) | G | ✅ |
+| Retry policy (reads only by default, backoff with jitter, honours the gateway retry delay, deadline aware) | G | ✅ |
 | Logger option (`ILoggerFactory`) | G | ⚠️ the gRPC channel, edge tunnel, retries, and watch reconnects log; waits and token refresh do not |
 | Per-call deadline and cancellation | all | ✅ |
 

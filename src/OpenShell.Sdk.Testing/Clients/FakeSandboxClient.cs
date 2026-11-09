@@ -202,6 +202,7 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
                 throw FakeGateway.AlreadyExists("sandbox", sandboxName);
             }
 
+            FakeGateway.RejectReservedAnnotations(options?.Annotations, "annotation");
             var effective = ApplyTemplate(templateName, spec);
             ConsumeRootfsTokens(effective.Template?.DriverConfigJson);
             foreach (var provider in effective.Providers ?? [])

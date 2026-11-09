@@ -17,16 +17,20 @@ internal sealed class ClientCore : IDisposable
     private readonly GrpcChannel? _channel;
     private int _disposed;
 
-    public ClientCore(OpenShellClientOptions options, GrpcChannel? channel, GrpcService.OpenShellClient grpc)
+    public ClientCore(OpenShellClientOptions options, GrpcChannel? channel, CallInvoker invoker)
     {
         Options = options;
         _channel = channel;
-        Grpc = grpc;
+        Grpc = new GrpcService.OpenShellClient(invoker);
+        SandboxUpdates = new Openshell.V1.SandboxUpdates.SandboxUpdatesClient(invoker);
     }
 
     public OpenShellClientOptions Options { get; }
 
     public GrpcService.OpenShellClient Grpc { get; }
+
+    /// <summary>The separate <c>openshell.v1.SandboxUpdates</c> service, on the same connection and call pipeline.</summary>
+    public Openshell.V1.SandboxUpdates.SandboxUpdatesClient SandboxUpdates { get; }
 
     public TimeProvider Time { get; init; } = TimeProvider.System;
 
