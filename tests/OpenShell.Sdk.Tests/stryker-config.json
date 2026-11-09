@@ -9,6 +9,11 @@
       "low": 70,
       "break": 0
     },
+    "mutate": [
+      "!**/Policy/PolicyModels.cs",
+      "!**/Providers/ProviderProfileModels.cs",
+      "!**/Providers/ProviderReadinessModels.cs"
+    ],
     "ignore-methods": ["ConfigureAwait", "Log*"]
   }
 }
