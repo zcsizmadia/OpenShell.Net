@@ -25,6 +25,14 @@ scripts/ci.sh build
 scripts/integration-gateway.sh scripts/ci.sh integration   # or no command: print the variables and keep the gateway running
 ```
 
+## Coding guidelines
+
+The build treats warnings as errors and enforces the analyzers in `.editorconfig`; CodeQL (`security-and-quality`) runs on every pull request, tests included. Beyond what the tools enforce:
+
+- **Dispose everything you create, on every path.** Prefer `using` / `await using` declarations to a manual `Dispose()` in `finally`. Dispose in `catch` blocks and before early returns too, for example a `TcpListener` whose `Start()` threw. Call `Dispose()` rather than only `Stop()` or `Close()` when the type is disposable. When ownership moves elsewhere (a response handed to `HttpClient`, a timer kept in a collection), say so in a comment and make sure the new owner disposes it.
+- **In tests, too.** A test that calls `Dispose()` on purpose to assert disposal behaviour still declares the object with `using`, so a failed assertion before the call doesn't leak it.
+- **No fixed sleeps in tests.** Wait on a signal, or use the bounded helpers in `tests/OpenShell.Sdk.Tests/Support/Waits.cs` with a `FakeTimeProvider`.
+
 ## Staying in sync with NVIDIA OpenShell
 
 The gRPC protos (`proto/`) and the shared SDK conformance fixtures (`conformance/`) are vendored unmodified from an NVIDIA/OpenShell release, recorded in `UPSTREAM_VERSION`:
