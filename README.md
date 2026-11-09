@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenShell.Net: unofficial .NET (C#) SDK for NVIDIA OpenShell
+# OpenShell.Net: .NET (C#) SDK for NVIDIA OpenShell
 
 .NET client for the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It targets `net8.0`, `net10.0`, and `net11.0`, is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
 
