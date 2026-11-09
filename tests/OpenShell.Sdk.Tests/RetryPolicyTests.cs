@@ -145,6 +145,19 @@ public class RetryPolicyTests
     }
 
     [Test]
+    public async Task The_deadline_check_uses_the_real_clock_not_the_injected_one()
+    {
+        // The deadline is a wall-clock instant; a TimeProvider an hour behind must not make it look far away.
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow.AddHours(-1));
+        var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.Unavailable, "x");
+        using var client = NewClient(invoker, time, Fast, timeout: TimeSpan.FromMilliseconds(50));
+
+        await Assert.That(async () => await client.Health.CheckAsync().AsTask().WithinBudget()).Throws<OpenShellException>();
+
+        await Assert.That(invoker.CountOf("Health")).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Retries_while_the_caller_deadline_leaves_room()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
