@@ -204,6 +204,32 @@ public class ProviderClientTests
     }
 
     [Test]
+    public async Task Create_and_delete_without_options_send_defaults()
+    {
+        Wire.CreateProviderRequest? created = null;
+        Wire.DeleteProviderRequest? deleted = null;
+        var invoker = new FakeCallInvoker()
+            .Unary<Wire.CreateProviderRequest, Wire.ProviderResponse>("CreateProvider", r =>
+            {
+                created = r;
+                return new Wire.ProviderResponse { Provider = ProviderFixtures.WireProvider() };
+            })
+            .Unary<Wire.DeleteProviderRequest, Wire.DeleteProviderResponse>("DeleteProvider", r =>
+            {
+                deleted = r;
+                return new Wire.DeleteProviderResponse { Outcome = Wire.DeletionOutcome.Completed };
+            });
+        using var client = ClientTests.NewClient(invoker);
+
+        await client.Providers.CreateAsync(NewProvider());
+        await client.Providers.DeleteAsync("p");
+
+        await Assert.That(created!.RequestId).IsEqualTo("");
+        await Assert.That(deleted!.RequestId).IsEqualTo("");
+        await Assert.That(deleted.AllowMissing).IsFalse();
+    }
+
+    [Test]
     [Arguments(Wire.DeletionOutcome.Completed, DeletionOutcome.Completed)]
     [Arguments(Wire.DeletionOutcome.AlreadyAbsent, DeletionOutcome.AlreadyAbsent)]
     [Arguments(Wire.DeletionOutcome.Accepted, DeletionOutcome.Accepted)]
@@ -354,6 +380,7 @@ public class ProviderClientTests
             "gh", ["A"], new ProviderCredentialsOptions { Workspace = workspace })).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).IsEqualTo("an explicit canonical workspace is required");
     }
 
     [Test]
@@ -363,8 +390,10 @@ public class ProviderClientTests
     {
         using var client = ClientTests.NewClient(new FakeCallInvoker());
 
-        await Assert.That(async () => await client.Providers.GetCredentialsAsync(
+        var ex = await Assert.That(async () => await client.Providers.GetCredentialsAsync(
             name, ["A"], new ProviderCredentialsOptions { Workspace = "w" })).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Message).IsEqualTo("a canonical provider name is required");
     }
 
     [Test]
@@ -372,8 +401,31 @@ public class ProviderClientTests
     {
         using var client = ClientTests.NewClient(new FakeCallInvoker());
 
-        await Assert.That(async () => await client.Providers.GetCredentialsAsync(
-            new string('x', 254), ["A"], new ProviderCredentialsOptions { Workspace = "w" })).Throws<OpenShellException>();
+        // 127 two-byte characters are 254 UTF-8 bytes: the limit is in bytes, not characters.
+        foreach (var name in new[] { new string('x', 254), new string('\u00e9', 127) })
+        {
+            await Assert.That(async () => await client.Providers.GetCredentialsAsync(
+                name, ["A"], new ProviderCredentialsOptions { Workspace = "w" })).Throws<OpenShellException>();
+        }
+    }
+
+    [Test]
+    public async Task GetCredentials_accepts_the_selection_limits()
+    {
+        var keys32 = Enumerable.Range(0, 32).Select(i => $"K{i}").ToArray();
+        var key256 = new string('K', 256);
+        var invoker = new FakeCallInvoker().Unary<Wire.GetProviderCredentialsRequest, Wire.GetProviderCredentialsResponse>(
+            "GetProviderCredentials", r => Credentials([.. r.CredentialKeys]));
+        using var client = ClientTests.NewClient(invoker);
+        var options = new ProviderCredentialsOptions { Workspace = "w", MinimumRemainingLifetime = TimeSpan.Zero };
+
+        var name253 = await client.Providers.GetCredentialsAsync(new string('x', 253), ["A"], options);
+        var many = await client.Providers.GetCredentialsAsync("gh", keys32, options);
+        var longKey = await client.Providers.GetCredentialsAsync("gh", [key256], options);
+
+        await Assert.That(name253.Count).IsEqualTo(1);
+        await Assert.That(many.Count).IsEqualTo(32);
+        await Assert.That(longKey.Keys.Single()).IsEqualTo(key256);
     }
 
     [Test]
@@ -383,10 +435,11 @@ public class ProviderClientTests
         var options = new ProviderCredentialsOptions { Workspace = "w" };
         var tooMany = Enumerable.Range(0, 33).Select(i => $"K{i}").ToArray();
 
-        foreach (var keys in new[] { Array.Empty<string>(), ["1BAD"], ["a-b"], ["A", "A"], [new string('K', 257)], tooMany, [null!] })
+        foreach (var keys in new[] { Array.Empty<string>(), ["1BAD"], ["a-b"], ["A", "A"], [new string('K', 257)], tooMany, [null!], ["A", "1BAD"] })
         {
             var ex = await Assert.That(async () => await client.Providers.GetCredentialsAsync("gh", keys, options)).Throws<OpenShellException>();
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+            await Assert.That(ex.Message).IsEqualTo("select between 1 and 32 unique runtime environment keys");
         }
     }
 
@@ -397,13 +450,16 @@ public class ProviderClientTests
 
         foreach (var lifetime in new[] { TimeSpan.FromSeconds(-1), TimeSpan.FromHours(24) + TimeSpan.FromTicks(1) })
         {
-            await Assert.That(async () => await client.Providers.GetCredentialsAsync(
+            var ex = await Assert.That(async () => await client.Providers.GetCredentialsAsync(
                 "gh", ["A"], new ProviderCredentialsOptions { Workspace = "w", MinimumRemainingLifetime = lifetime })).Throws<OpenShellException>();
+            await Assert.That(ex!.Message).IsEqualTo("MinimumRemainingLifetime must be between zero and 24 hours");
         }
 
-        await Assert.That(async () => await client.Providers.GetCredentialsAsync("gh", ["A"], null!)).Throws<ArgumentNullException>();
-        await Assert.That(async () => await client.Providers.GetCredentialsAsync(
+        var noOptions = await Assert.That(async () => await client.Providers.GetCredentialsAsync("gh", ["A"], null!)).Throws<ArgumentNullException>();
+        await Assert.That(noOptions!.ParamName).IsEqualTo("options");
+        var noKeys = await Assert.That(async () => await client.Providers.GetCredentialsAsync(
             "gh", null!, new ProviderCredentialsOptions { Workspace = "w" })).Throws<ArgumentNullException>();
+        await Assert.That(noKeys!.ParamName).IsEqualTo("credentialKeys");
     }
 
     [Test]
@@ -432,6 +488,7 @@ public class ProviderClientTests
                 "gh", ["A", "B"], new ProviderCredentialsOptions { Workspace = "w" })).Throws<OpenShellException>();
 
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Internal);
+            await Assert.That(ex.Message).IsEqualTo("gateway returned an unexpected credential selection");
         }
     }
 
