@@ -123,8 +123,13 @@ internal sealed class ExecClient(ClientCore core, string workspace) : IExecClien
 
         var request = BuildRequest(workspace, sandbox, command, options);
 
+        var owner = await core.Routing.OwnerAsync(workspace, sandbox, cancellationToken).ConfigureAwait(false);
         var sawExit = false;
-        await foreach (var ev in core.StreamAsync(o => core.Grpc.ExecSandbox(request, o), cancellationToken).ConfigureAwait(false))
+        await foreach (var ev in core.StreamAsync(
+            o => core.Grpc.ExecSandbox(request, o),
+            cancellationToken,
+            owner,
+            () => core.Routing.Forget(workspace, sandbox)).ConfigureAwait(false))
         {
             switch (ev.PayloadCase)
             {
@@ -167,7 +172,8 @@ internal sealed class ExecClient(ClientCore core, string workspace) : IExecClien
         request.Tty = allocateTty;
         request.Cols = columns;
         request.Rows = rows;
-        return await ExecInteractiveSession.StartAsync(core, request, cancellationToken).ConfigureAwait(false);
+        var owner = await core.Routing.OwnerAsync(workspace, sandbox, cancellationToken).ConfigureAwait(false);
+        return await ExecInteractiveSession.StartAsync(core, request, cancellationToken, owner, () => core.Routing.Forget(workspace, sandbox)).ConfigureAwait(false);
     }
 
     internal static Wire.ExecSandboxRequest BuildRequest(string workspace, string sandbox, IReadOnlyList<string> command, ExecOptions? options)

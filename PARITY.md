@@ -71,6 +71,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Edge tunnel started automatically for `cloudflare_jwt` gateways (`EdgeTunnelMode.Auto`, owned by the client) | R | ⚠️ tested against a fake WebSocket edge, not a real Cloudflare Access edge |
 | Refusal to send credentials over plaintext to a non-loopback host | T | ✅ |
 | Retry policy (reads only by default, backoff with jitter, honours the gateway retry delay, deadline aware) | G | ✅ |
+| Owner-replica routing for exec, interactive exec, port forwarding, and SSH (`x-openshell-want-owner`, `x-openshell-replica`, one unrouted retry, 30 s owner cache) | G T P | ⚠️ unit tested with scripted headers; not run against a multi-replica gateway |
 | Logger option (`ILoggerFactory`) | G | ⚠️ the gRPC channel, edge tunnel, retries, and watch reconnects log; waits and token refresh do not |
 | Per-call deadline and cancellation | all | ✅ |
 

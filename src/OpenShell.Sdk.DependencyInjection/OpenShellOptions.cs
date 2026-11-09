@@ -42,6 +42,9 @@ public sealed class OpenShellOptions
     /// <summary>Retry settings. Null keeps <see cref="RetryPolicy.Default"/>.</summary>
     public RetryOptions? Retry { get; set; }
 
+    /// <summary>Routes long-lived streams to the sandbox's owner replica; see <see cref="OpenShellClientOptions.RouteToOwnerReplica"/>.</summary>
+    public bool RouteToOwnerReplica { get; set; } = true;
+
     /// <summary>An authentication provider built in code. Takes precedence over <see cref="Token"/>; not bindable from configuration.</summary>
     public IAuthProvider? Auth { get; set; }
 
@@ -59,6 +62,7 @@ public sealed class OpenShellOptions
             AllowInsecureAuth = AllowInsecureAuth,
             DefaultTimeout = DefaultTimeout,
             Retry = Retry?.ToPolicy() ?? RetryPolicy.Default,
+            RouteToOwnerReplica = RouteToOwnerReplica,
             LoggerFactory = loggerFactory,
         };
     }

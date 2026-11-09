@@ -49,6 +49,14 @@ public sealed record OpenShellClientOptions
     /// <summary>Optional logger factory.</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
 
+    /// <summary>
+    /// Sends exec, interactive exec, port forwarding, and SSH streams straight to the gateway replica that holds the
+    /// sandbox's supervisor session, when a multi-replica gateway reports one (<c>x-openshell-owner</c>). On by
+    /// default; it is gRPC metadata only, a single-replica gateway ignores it, and a routed stream that cannot reach
+    /// its replica is reopened unrouted once.
+    /// </summary>
+    public bool RouteToOwnerReplica { get; init; } = true;
+
     /// <summary>Throws <see cref="OpenShellException"/> (<see cref="OpenShellErrorKind.InvalidConfig"/>) when the options are inconsistent or unsafe, without connecting.</summary>
     public void Validate() => Transport.ChannelFactory.Validate(this);
 

@@ -89,8 +89,8 @@ public sealed class OpenShellClient : IOpenShellClient
         Providers = new ProviderClient(core, workspace);
         SandboxProviders = new SandboxProviderClient(core, workspace);
         Services = new ServiceClient(core, workspace);
-        Ssh = new SshClient(core, workspace, Sandboxes);
-        Tcp = new TcpForwardClient(core, workspace, Sandboxes, Ssh);
+        Ssh = new SshClient(core, workspace);
+        Tcp = new TcpForwardClient(core, workspace, Ssh);
         Files = new FileClient(Exec);
     }
 

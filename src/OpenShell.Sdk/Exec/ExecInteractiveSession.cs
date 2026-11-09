@@ -30,26 +30,32 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         _cts = cts;
     }
 
-    internal static async ValueTask<ExecInteractiveSession> StartAsync(ClientCore core, Wire.ExecSandboxRequest start, CancellationToken cancellationToken)
+    internal static async ValueTask<ExecInteractiveSession> StartAsync(
+        ClientCore core,
+        Wire.ExecSandboxRequest start,
+        CancellationToken cancellationToken,
+        string? replica = null,
+        Action? onUnrouted = null)
     {
         ObjectDisposedException.ThrowIf(core.IsDisposed, core);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        AsyncDuplexStreamingCall<Wire.ExecSandboxInput, Wire.ExecSandboxEvent>? call = null;
         try
         {
-            call = core.Grpc.ExecSandboxInteractive(new CallOptions(cancellationToken: cts.Token));
-            await call.RequestStream.WriteAsync(new Wire.ExecSandboxInput { Start = start }, cts.Token).ConfigureAwait(false);
+            var call = await ClientCore.OpenDuplexAsync(
+                headers => core.Grpc.ExecSandboxInteractive(new CallOptions(headers: headers, cancellationToken: cts.Token)),
+                new Wire.ExecSandboxInput { Start = start },
+                replica,
+                onUnrouted,
+                cts.Token).ConfigureAwait(false);
             return new ExecInteractiveSession(call, cts);
         }
         catch (RpcException e)
         {
-            call?.Dispose();
             cts.Dispose();
             throw ClientCore.Map(e, cancellationToken);
         }
         catch
         {
-            call?.Dispose();
             cts.Dispose();
             throw;
         }

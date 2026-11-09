@@ -56,26 +56,29 @@ public sealed class ForwardStream : Stream
         ClientCore core,
         Wire.TcpForwardInit init,
         CancellationToken cancellationToken,
-        Func<ValueTask>? onClosed = null)
+        Func<ValueTask>? onClosed = null,
+        string? replica = null,
+        Action? onUnrouted = null)
     {
         ObjectDisposedException.ThrowIf(core.IsDisposed, core);
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        AsyncDuplexStreamingCall<Wire.TcpForwardFrame, Wire.TcpForwardFrame>? call = null;
         try
         {
-            call = core.Grpc.ForwardTcp(new CallOptions(cancellationToken: cts.Token));
-            await call.RequestStream.WriteAsync(new Wire.TcpForwardFrame { Init = init }, cts.Token).ConfigureAwait(false);
+            var call = await ClientCore.OpenDuplexAsync(
+                headers => core.Grpc.ForwardTcp(new CallOptions(headers: headers, cancellationToken: cts.Token)),
+                new Wire.TcpForwardFrame { Init = init },
+                replica,
+                onUnrouted,
+                cts.Token).ConfigureAwait(false);
             return new ForwardStream(call, cts, onClosed);
         }
         catch (RpcException e)
         {
-            call?.Dispose();
             cts.Dispose();
             throw ClientCore.Map(e, cancellationToken);
         }
         catch
         {
-            call?.Dispose();
             cts.Dispose();
             throw;
         }
