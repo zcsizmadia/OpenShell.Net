@@ -119,7 +119,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | `OpenShell.Sdk.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
-| README | ✅; a full documentation site is planned in #25 |
+| README (overview, install, quick start) and documentation site: getting started, 17 guides, API reference (DocFX, GitHub Pages); every snippet compiled and most run against the fake in CI | ✅ |
 | `scripts/ci.sh`, CI workflow (Linux and Windows) | ✅ runs on every pull request and on `main` |
 | nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ⚠️ written; first runs on the first release tag |
 | Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh` (optional files for fixtures newer than the release), drift check in CI | ✅ the drift check runs in CI and fails on script errors |
