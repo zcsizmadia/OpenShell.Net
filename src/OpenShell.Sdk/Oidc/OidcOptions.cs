@@ -50,7 +50,7 @@ public sealed record OidcOptions
     /// <summary>Do not read or write the on-disk token cache.</summary>
     public bool InMemory { get; init; }
 
-    /// <summary>Directory holding <c>oidc_token.json</c>; defaults to the gateway directory.</summary>
+    /// <summary>Directory holding <c>oidc_token.json</c>; defaults to the gateway's per-user <see cref="GatewayMetadata.StateDirectory"/>.</summary>
     public string? TokenCacheDirectory { get; init; }
 
     /// <summary>Receives the verification URL and user code during the device flow; defaults to the console.</summary>

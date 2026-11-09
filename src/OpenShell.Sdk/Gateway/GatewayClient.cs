@@ -85,7 +85,7 @@ public static class GatewayClient
 
         var proxy = EdgeTunnelProxy.Start(
             config.Endpoint.ToString(),
-            LazyEdgeAuth.ReadToken(config.Directory),
+            LazyEdgeAuth.ReadToken(config.StateDirectory),
             options.EdgeTunnelOptions ?? new EdgeTunnelOptions { Logger = options.LoggerFactory?.CreateLogger<EdgeTunnelProxy>() });
         try
         {
@@ -113,7 +113,7 @@ public static class GatewayClient
         var auth = options.Auth ?? config.AuthMode switch
         {
             GatewayAuthMode.None or GatewayAuthMode.Plaintext or GatewayAuthMode.Mtls => Auth.None,
-            GatewayAuthMode.CloudflareJwt => new LazyEdgeAuth(config.Directory),
+            GatewayAuthMode.CloudflareJwt => new LazyEdgeAuth(config.StateDirectory),
             GatewayAuthMode.Oidc => new DiskOidcAuth(config, options),
             _ => throw new OpenShellException(OpenShellErrorKind.InvalidConfig, "unsupported auth mode"),
         };
@@ -137,7 +137,7 @@ public static class GatewayClient
     /// </summary>
     internal static TlsOptions LoadTls(GatewayMetadata config)
     {
-        var dir = Path.Combine(config.Directory, "mtls");
+        var dir = Path.Combine(config.StateDirectory, "mtls");
         var caPath = Path.Combine(dir, "ca.crt");
         var certPath = Path.Combine(dir, "tls.crt");
         var keyPath = Path.Combine(dir, "tls.key");

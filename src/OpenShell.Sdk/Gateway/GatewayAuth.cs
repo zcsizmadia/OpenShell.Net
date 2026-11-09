@@ -98,7 +98,7 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
     {
         var issuer = _config.OidcIssuer;
         var clientId = _config.OidcClientId;
-        var stored = OidcTokenFile.Read(_config.Directory);
+        var stored = OidcTokenFile.Read(_config.StateDirectory);
 
         // A token issued for another issuer or client, or one that records neither, is not this gateway's token. When
         // the metadata names no issuer or client there is nothing to check against, and the token is served as is.
@@ -127,7 +127,7 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
         {
             try
             {
-                OidcTokenFile.Write(_config.Directory, renewed, issuer, clientId);
+                OidcTokenFile.Write(_config.StateDirectory, renewed, issuer, clientId);
             }
             catch (OidcException)
             {

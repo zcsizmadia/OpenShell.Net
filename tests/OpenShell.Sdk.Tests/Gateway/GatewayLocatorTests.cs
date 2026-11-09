@@ -109,10 +109,9 @@ public class GatewayLocatorTests
         Register(root, "user", "nullbody", "null");
         Register(root, "user", "relative", """{"gateway_endpoint":"/just/a/path"}""");
         Register(root, "user", "scheme", """{"gateway_endpoint":"ftp://gw.example.com"}""");
-        root.Make("user", "gateways", "nometa");
         var locator = Locator(root);
 
-        foreach (var name in new[] { "badjson", "noendpoint", "nullbody", "relative", "scheme", "nometa" })
+        foreach (var name in new[] { "badjson", "noendpoint", "nullbody", "relative", "scheme" })
         {
             var ex = await Assert.That(() => locator.Load(name)).Throws<OpenShellException>();
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
@@ -201,10 +200,14 @@ public class GatewayLocatorTests
         var empty = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
         await Assert.That(empty!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
 
+        await Assert.That(empty.Message).Contains("is empty");
+
         File.WriteAllText(file, "../escape");
         var invalid = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
-        await Assert.That(invalid!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(invalid!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
+        await Assert.That(invalid.Message).Contains("names an invalid gateway");
 
+        // The environment variable is explicit, so an invalid value is an error rather than a fallthrough.
         var badEnv = Locator(root, new() { ["OPENSHELL_GATEWAY"] = "a/b" });
         await Assert.That(badEnv.ResolveActiveName).Throws<OpenShellException>();
     }

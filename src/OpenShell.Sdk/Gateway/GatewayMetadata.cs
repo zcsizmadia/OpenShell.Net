@@ -47,8 +47,22 @@ public sealed record GatewayMetadata
     /// <summary>Where the registration was found.</summary>
     public GatewayConfigSource Source { get; init; }
 
-    /// <summary>Registration directory holding <c>metadata.json</c>, tokens and the mTLS bundle.</summary>
+    /// <summary>Registration directory holding <c>metadata.json</c>: the user or the system gateway directory.</summary>
     public required string Directory { get; init; }
+
+    /// <summary>
+    /// Per-user directory holding the gateway's credentials: the <c>mtls</c> bundle, <c>oidc_token.json</c> and
+    /// <c>edge_token</c>. As in the OpenShell CLI it is always the user gateway directory, also for a system registration,
+    /// because only <c>active_gateway</c> and <c>metadata.json</c> come from the system configuration. Defaults to
+    /// <see cref="Directory"/>.
+    /// </summary>
+    public string StateDirectory
+    {
+        get => _stateDirectory ?? Directory;
+        init => _stateDirectory = value;
+    }
+
+    private readonly string? _stateDirectory;
 
     /// <summary>OIDC issuer URL, when the gateway uses OIDC.</summary>
     public string? OidcIssuer { get; init; }
