@@ -56,24 +56,28 @@ internal sealed class ConformanceFixture
 
     public static ConformanceFixture Load()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
+        var text = File.ReadAllText(PathOf("oauth-client-credentials.json"));
+#if NET10_0_OR_GREATER
+        return new ConformanceFixture(JsonElement.Parse(text));
+#else
+        using var document = JsonDocument.Parse(text);
+        return new ConformanceFixture(document.RootElement.Clone());
+#endif
+    }
+
+    /// <summary>The full path of a file in the vendored <c>conformance/</c> directory, found above the test binaries.</summary>
+    public static string PathOf(string fileName)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
         {
-            var candidate = Path.Combine(dir.FullName, "conformance", "oauth-client-credentials.json");
+            var candidate = Path.Combine(dir.FullName, "conformance", fileName);
             if (File.Exists(candidate))
             {
-#if NET10_0_OR_GREATER
-                return new ConformanceFixture(JsonElement.Parse(File.ReadAllText(candidate)));
-#else
-                using var document = JsonDocument.Parse(File.ReadAllText(candidate));
-                return new ConformanceFixture(document.RootElement.Clone());
-#endif
+                return candidate;
             }
-
-            dir = dir.Parent;
         }
 
-        throw new FileNotFoundException("conformance/oauth-client-credentials.json not found above " + AppContext.BaseDirectory);
+        throw new FileNotFoundException($"conformance/{fileName} not found above " + AppContext.BaseDirectory);
     }
 
     public string Str(string section, string name) => Root.GetProperty(section).GetProperty(name).GetString()!;

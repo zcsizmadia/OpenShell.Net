@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text.Json;
 using Microsoft.Extensions.Time.Testing;
 using OpenShell.Oidc;
 using OpenShell.Tests.Support;
@@ -9,26 +10,37 @@ namespace OpenShell.Tests;
 
 public class OidcTokenFileTests
 {
+    private const string Issuer = "https://issuer.example.com";
+    private const string Client = "openshell-cli";
     private static readonly DateTimeOffset Now = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Test]
-    public async Task Round_trips_through_the_shared_cli_format()
+    public async Task Reads_the_shared_conformance_bundle()
     {
         using var dir = new TempDirectory();
-        var time = new FakeTimeProvider(Now);
-        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", "ref", "Bearer", Now.AddHours(1)), time);
+        File.Copy(ConformanceFixture.PathOf("oidc-token-bundle.json"), Path.Combine(dir.Path, "oidc_token.json"));
 
-        var json = await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"));
-        var read = OidcTokenFile.ReadRaw(dir.Path)!;
+        var stored = OidcTokenFile.Read(dir.Path)!;
 
-        await Assert.That(json).Contains("\"access_token\":\"acc\"");
-        await Assert.That(json).Contains("\"refresh_token\":\"ref\"");
-        await Assert.That(json).Contains("\"expiry\":\"2026-01-01T13:00:00Z\"");
-        await Assert.That(json).Contains("\"expires_in\":3600");
-        await Assert.That(read.AccessToken).IsEqualTo("acc");
-        await Assert.That(read.RefreshToken).IsEqualTo("ref");
-        await Assert.That(read.ExpiresAt).IsEqualTo(Now.AddHours(1));
-        await Assert.That(read.TokenType).IsEqualTo("Bearer");
+        await Assert.That(stored.Tokens.AccessToken).IsEqualTo("conformance-access-token");
+        await Assert.That(stored.Tokens.RefreshToken).IsEqualTo("conformance-refresh-token");
+        await Assert.That(stored.Tokens.ExpiresAt).IsEqualTo(DateTimeOffset.FromUnixTimeSeconds(4102444800));
+        await Assert.That(stored.Issuer).IsEqualTo(Issuer);
+        await Assert.That(stored.ClientId).IsEqualTo(Client);
+        await Assert.That(stored.IsFor(Issuer, Client)).IsTrue();
+    }
+
+    [Test]
+    public async Task Writes_the_shared_conformance_bundle_field_for_field()
+    {
+        using var dir = new TempDirectory();
+        var tokens = new OidcTokens("conformance-access-token", "conformance-refresh-token", "Bearer", DateTimeOffset.FromUnixTimeSeconds(4102444800));
+
+        OidcTokenFile.Write(dir.Path, tokens, Issuer, Client);
+
+        using var written = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json")));
+        using var expected = JsonDocument.Parse(await File.ReadAllTextAsync(ConformanceFixture.PathOf("oidc-token-bundle.json")));
+        await Assert.That(Describe(written.RootElement)).IsEqualTo(Describe(expected.RootElement));
     }
 
     [Test]
@@ -36,51 +48,83 @@ public class OidcTokenFileTests
     {
         using var dir = new TempDirectory();
         var time = new FakeTimeProvider(Now);
-        OidcTokenFile.Write(dir.Path, new OidcTokens("acc"), time);
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc"), Issuer, Client);
 
         var json = await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"));
-        await Assert.That(json).DoesNotContain("expiry");
-        await Assert.That(json).DoesNotContain("refresh_token");
+        await Assert.That(json).IsEqualTo("""{"access_token":"acc","issuer":"https://issuer.example.com","client_id":"openshell-cli"}""");
 
         time.Advance(TimeSpan.FromDays(3650));
-        await Assert.That(OidcTokenFile.ReadValid(dir.Path, time)!.AccessToken).IsEqualTo("acc");
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, Client, time)!.AccessToken).IsEqualTo("acc");
     }
 
     [Test]
-    public async Task Already_expired_tokens_record_no_remaining_lifetime()
+    public async Task Expiry_is_stored_in_whole_unix_seconds_and_clamped_at_the_epoch()
     {
         using var dir = new TempDirectory();
-        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: Now.AddHours(-1)), new FakeTimeProvider(Now));
+        var path = Path.Combine(dir.Path, "oidc_token.json");
 
-        await Assert.That(await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"))).Contains("\"expires_in\":0");
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: Now.AddMilliseconds(900)), Issuer, Client);
+        await Assert.That(await File.ReadAllTextAsync(path)).Contains($"\"expires_at\":{Now.ToUnixTimeSeconds()}");
+
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: DateTimeOffset.UnixEpoch.AddDays(-1)), Issuer, Client);
+        await Assert.That(await File.ReadAllTextAsync(path)).Contains("\"expires_at\":0");
     }
 
     [Test]
-    public async Task ReadValid_applies_a_ten_second_leeway_but_ReadRaw_does_not()
+    public async Task ReadValid_applies_a_ten_second_leeway_but_Read_does_not()
     {
         using var dir = new TempDirectory();
         var time = new FakeTimeProvider(Now);
-        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: Now.AddSeconds(60)), time);
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: Now.AddSeconds(60)), Issuer, Client);
 
         time.Advance(TimeSpan.FromSeconds(49));
-        await Assert.That(OidcTokenFile.ReadValid(dir.Path, time)).IsNotNull();
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, Client, time)).IsNotNull();
         time.Advance(TimeSpan.FromSeconds(2));
-        await Assert.That(OidcTokenFile.ReadValid(dir.Path, time)).IsNull();
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Path)).IsNotNull();
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, Client, time)).IsNull();
+        await Assert.That(OidcTokenFile.Read(dir.Path)).IsNotNull();
+    }
+
+    [Test]
+    public async Task ReadValid_only_returns_tokens_issued_for_the_same_issuer_and_client()
+    {
+        using var dir = new TempDirectory();
+        var time = new FakeTimeProvider(Now);
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc"), Issuer + "/", Client);
+
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, Client, time)).IsNotNull();
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, "https://other.example.com", Client, time)).IsNull();
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, "other-client", time)).IsNull();
+    }
+
+    [Test]
+    public async Task Files_from_early_builds_without_issuer_or_client_match_nothing()
+    {
+        using var dir = new TempDirectory();
+        await File.WriteAllTextAsync(
+            Path.Combine(dir.Path, "oidc_token.json"),
+            """{"access_token":"old","refresh_token":"r","expiry":"2099-01-01T00:00:00Z","expires_in":3600}""");
+
+        var stored = OidcTokenFile.Read(dir.Path)!;
+
+        await Assert.That(stored.Tokens.AccessToken).IsEqualTo("old");
+        await Assert.That(stored.Tokens.ExpiresAt).IsNull();
+        await Assert.That(stored.Issuer).IsNull();
+        await Assert.That(stored.IsFor(Issuer, Client)).IsFalse();
+        await Assert.That(OidcTokenFile.ReadValid(dir.Path, Issuer, Client, TimeProvider.System)).IsNull();
     }
 
     [Test]
     public async Task Missing_file_directory_and_empty_access_token_read_as_null()
     {
         using var dir = new TempDirectory();
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Path)).IsNull();
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Combine("nope"))).IsNull();
+        await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
+        await Assert.That(OidcTokenFile.Read(dir.Combine("nope"))).IsNull();
 
         await File.WriteAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"), """{"access_token":""}""");
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Path)).IsNull();
+        await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
 
         await File.WriteAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"), "null");
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Path)).IsNull();
+        await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
     }
 
     [Test]
@@ -90,12 +134,16 @@ public class OidcTokenFileTests
         var path = Path.Combine(dir.Path, "oidc_token.json");
 
         await File.WriteAllTextAsync(path, "{nope");
-        var ex1 = await Assert.That(() => OidcTokenFile.ReadRaw(dir.Path)).Throws<OidcException>();
+        var ex1 = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
         await Assert.That(ex1!.Failure).IsEqualTo(OidcFailure.TokenPersist);
 
-        await File.WriteAllTextAsync(path, """{"access_token":"a","expiry":"not-a-date"}""");
-        var ex2 = await Assert.That(() => OidcTokenFile.ReadRaw(dir.Path)).Throws<OidcException>();
-        await Assert.That(ex2!.Message).Contains("expiry");
+        await File.WriteAllTextAsync(path, """{"access_token":"a","expires_at":"soon"}""");
+        var ex2 = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
+        await Assert.That(ex2!.Failure).IsEqualTo(OidcFailure.TokenPersist);
+
+        await File.WriteAllTextAsync(path, """{"access_token":"a","expires_at":18446744073709551615}""");
+        var ex3 = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
+        await Assert.That(ex3!.Message).Contains("expires_at");
     }
 
     [Test]
@@ -104,7 +152,7 @@ public class OidcTokenFileTests
         using var dir = new TempDirectory();
         Directory.CreateDirectory(Path.Combine(dir.Path, "oidc_token.json"));
 
-        var ex = await Assert.That(() => OidcTokenFile.ReadRaw(dir.Path)).Throws<OidcException>();
+        var ex = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.TokenPersist);
     }
@@ -116,7 +164,7 @@ public class OidcTokenFileTests
         var blocker = Path.Combine(dir.Path, "blocker");
         await File.WriteAllTextAsync(blocker, "x");
 
-        var ex = await Assert.That(() => OidcTokenFile.Write(Path.Combine(blocker, "sub"), new OidcTokens("a"), TimeProvider.System)).Throws<OidcException>();
+        var ex = await Assert.That(() => OidcTokenFile.Write(Path.Combine(blocker, "sub"), new OidcTokens("a"), Issuer, Client)).Throws<OidcException>();
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.TokenPersist);
         await Assert.That(Directory.GetFiles(dir.Path).Length).IsEqualTo(1);
@@ -127,12 +175,11 @@ public class OidcTokenFileTests
     {
         using var dir = new TempDirectory();
         var nested = dir.Combine("a", "b");
-        var time = new FakeTimeProvider(Now);
 
-        OidcTokenFile.Write(nested, new OidcTokens("one"), time);
-        OidcTokenFile.Write(nested, new OidcTokens("two"), time);
+        OidcTokenFile.Write(nested, new OidcTokens("one"), Issuer, Client);
+        OidcTokenFile.Write(nested, new OidcTokens("two"), Issuer, Client);
 
-        await Assert.That(OidcTokenFile.ReadRaw(nested)!.AccessToken).IsEqualTo("two");
+        await Assert.That(OidcTokenFile.Read(nested)!.Tokens.AccessToken).IsEqualTo("two");
         await Assert.That(Directory.GetFiles(nested).Length).IsEqualTo(1);
     }
 
@@ -145,10 +192,14 @@ public class OidcTokenFileTests
         }
 
         using var dir = new TempDirectory();
-        OidcTokenFile.Write(dir.Path, new OidcTokens("a"), TimeProvider.System);
+        OidcTokenFile.Write(dir.Path, new OidcTokens("a"), Issuer, Client);
 
         await Assert.That(File.GetUnixFileMode(Path.Combine(dir.Path, "oidc_token.json"))).IsEqualTo(UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
+
+    /// <summary>The properties of a JSON object in name order, so two bundles compare regardless of layout.</summary>
+    private static string Describe(JsonElement element) =>
+        string.Join(", ", element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal).Select(p => $"{p.Name}={p.Value.GetRawText()}"));
 }
 
 public class OidcBrowserTests

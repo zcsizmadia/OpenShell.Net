@@ -318,6 +318,22 @@ public class OidcLoginTests
     }
 
     [Test]
+    public async Task A_cached_token_for_another_client_is_not_reused()
+    {
+        using var dir = new TempDirectory();
+        OidcTokenFile.Write(dir.Path, new OidcTokens("foreign", ExpiresAt: DateTimeOffset.UtcNow.AddHours(1)), Issuer, "another-client");
+        var handler = StubHandler.Provider(Issuer, _ => TokenOk());
+        var options = Options(handler, Browser(q => $"code=c&state={q["state"]}")) with { InMemory = false, TokenCacheDirectory = dir.Path };
+
+        var tokens = await OidcLogin.LoginAsync(options);
+
+        await Assert.That(tokens.AccessToken).IsEqualTo("login-access");
+        var stored = OidcTokenFile.Read(dir.Path)!;
+        await Assert.That(stored.Tokens.AccessToken).IsEqualTo("login-access");
+        await Assert.That(stored.IsFor(Issuer, options.ClientId!)).IsTrue();
+    }
+
+    [Test]
     public async Task In_memory_login_never_touches_the_disk()
     {
         using var dir = new TempDirectory();
@@ -342,7 +358,7 @@ public class OidcLoginTests
         var tokens = await OidcLogin.LoginAsync(options);
 
         await Assert.That(tokens.AccessToken).IsEqualTo("login-access");
-        await Assert.That(OidcTokenFile.ReadRaw(dir.Path)!.AccessToken).IsEqualTo("login-access");
+        await Assert.That(OidcTokenFile.Read(dir.Path)!.Tokens.AccessToken).IsEqualTo("login-access");
     }
 
     [Test]

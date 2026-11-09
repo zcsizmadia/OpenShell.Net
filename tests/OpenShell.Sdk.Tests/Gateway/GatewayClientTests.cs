@@ -291,7 +291,7 @@ public class GatewayClientTests
         public bool RotateRefresh { get; set; }
 
         public void WriteDisk(string access, string? refresh, DateTimeOffset? expiry) =>
-            OidcTokenFile.Write(Dir.Path, new OidcTokens(access, refresh, "Bearer", expiry), Time);
+            OidcTokenFile.Write(Dir.Path, new OidcTokens(access, refresh, "Bearer", expiry), Idp, "cli");
 
         public async Task<string> Header()
         {
@@ -337,7 +337,7 @@ public class GatewayClientTests
         var form = rig.Handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
         await Assert.That(form["grant_type"]).IsEqualTo("refresh_token");
         await Assert.That(form["refresh_token"]).IsEqualTo("refresh-1");
-        var disk = OidcTokenFile.ReadRaw(rig.Dir.Path)!;
+        var disk = OidcTokenFile.Read(rig.Dir.Path)!.Tokens;
         await Assert.That(disk.AccessToken).IsEqualTo("renewed-1");
         await Assert.That(disk.RefreshToken).IsEqualTo("refresh-1");
     }
@@ -350,7 +350,7 @@ public class GatewayClientTests
 
         await rig.Header();
 
-        await Assert.That(OidcTokenFile.ReadRaw(rig.Dir.Path)!.RefreshToken).IsEqualTo("rotated");
+        await Assert.That(OidcTokenFile.Read(rig.Dir.Path)!.Tokens.RefreshToken).IsEqualTo("rotated");
     }
 
     [Test]
@@ -361,7 +361,7 @@ public class GatewayClientTests
 
         await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
 
-        await Assert.That(OidcTokenFile.ReadRaw(rig.Dir.Path)!.AccessToken).IsEqualTo("stale");
+        await Assert.That(OidcTokenFile.Read(rig.Dir.Path)!.Tokens.AccessToken).IsEqualTo("stale");
     }
 
     [Test]
@@ -389,7 +389,7 @@ public class GatewayClientTests
 
         var ex = await Assert.That(async () => await rig.Header()).Throws<OidcException>();
 
-        await Assert.That(ex!.Message).Contains("re-authenticate with the CLI");
+        await Assert.That(ex!.Message).Contains("run `openshell gateway login gw`");
         await Assert.That(rig.Handler.Requests.Count).IsEqualTo(0);
     }
 
@@ -405,13 +405,45 @@ public class GatewayClientTests
     }
 
     [Test]
+    public async Task A_token_issued_for_another_client_is_neither_served_nor_refreshed()
+    {
+        using var rig = new OidcRig();
+        OidcTokenFile.Write(rig.Dir.Path, new OidcTokens("foreign", "foreign-refresh", "Bearer", Now.AddHours(1)), Idp, "another-client");
+
+        var ex = await Assert.That(async () => await rig.Header()).Throws<OidcException>();
+
+        await Assert.That(ex!.Message).Contains("run `openshell gateway login gw`");
+        await Assert.That(rig.Handler.Requests.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task A_cli_written_token_is_served_and_renewed_tokens_stay_readable_by_the_cli()
+    {
+        using var rig = new OidcRig();
+        var path = Path.Combine(rig.Dir.Path, "oidc_token.json");
+        await File.WriteAllTextAsync(
+            path,
+            $$"""{"access_token":"cli-token","refresh_token":"cli-refresh","expires_at":{{Now.AddMinutes(10).ToUnixTimeSeconds()}},"issuer":"{{Idp}}","client_id":"cli"}""");
+
+        await Assert.That(await rig.Header()).IsEqualTo("cli-token");
+
+        // The CLI's expires_at is honoured: once it passes, the token is renewed and written back in the CLI format.
+        rig.Time.Advance(TimeSpan.FromMinutes(10));
+        await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
+        var json = await File.ReadAllTextAsync(path);
+        await Assert.That(json).Contains($"\"expires_at\":{rig.Time.GetUtcNow().AddHours(1).ToUnixTimeSeconds()}");
+        await Assert.That(json).Contains($"\"issuer\":\"{Idp}\"");
+        await Assert.That(json).Contains("\"client_id\":\"cli\"");
+    }
+
+    [Test]
     public async Task A_missing_token_file_is_reported()
     {
         using var rig = new OidcRig();
 
         var ex = await Assert.That(async () => await rig.Header()).Throws<OidcException>();
 
-        await Assert.That(ex!.Message).Contains("sign in with the CLI");
+        await Assert.That(ex!.Message).Contains("no usable OIDC token");
     }
 
     [Test]

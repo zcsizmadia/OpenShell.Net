@@ -96,19 +96,25 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
 
     private async ValueTask<AccessToken> LoadAsync(CancellationToken cancellationToken)
     {
-        var disk = OidcTokenFile.ReadRaw(_config.Directory);
+        var issuer = _config.OidcIssuer;
+        var clientId = _config.OidcClientId;
+        var stored = OidcTokenFile.Read(_config.Directory);
+
+        // A token issued for another issuer or client, or one that records neither, is not this gateway's token. When
+        // the metadata names no issuer or client there is nothing to check against, and the token is served as is.
+        var disk = stored is not null && (issuer is null || clientId is null || stored.IsFor(issuer, clientId)) ? stored.Tokens : null;
         if (disk is not null && IsUsable(disk) && !string.Equals(disk.AccessToken, _rejected, StringComparison.Ordinal))
         {
             return Serve(disk);
         }
 
-        if (!_options.AutoRefresh || disk?.RefreshToken is null || _config.OidcIssuer is null || _config.OidcClientId is null)
+        if (!_options.AutoRefresh || disk?.RefreshToken is null || issuer is null || clientId is null)
         {
             throw new OidcException(
                 OidcFailure.Refresh,
                 disk is null
-                    ? $"no usable OIDC token for gateway '{_config.Name}'; sign in with the CLI"
-                    : $"OIDC token for gateway '{_config.Name}' is expired; re-authenticate with the CLI");
+                    ? $"no usable OIDC token for gateway '{_config.Name}'; run `openshell gateway login {_config.Name}`"
+                    : $"OIDC token for gateway '{_config.Name}' is expired; run `openshell gateway login {_config.Name}`");
         }
 
         var renewed = await OidcLogin.RefreshAsync(
@@ -121,7 +127,7 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
         {
             try
             {
-                OidcTokenFile.Write(_config.Directory, renewed, _time);
+                OidcTokenFile.Write(_config.Directory, renewed, issuer, clientId);
             }
             catch (OidcException)
             {

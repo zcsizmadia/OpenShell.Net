@@ -14,7 +14,8 @@
 set -euo pipefail
 
 repo="NVIDIA/OpenShell"
-# upstream path -> local path, relative to each repository root
+# upstream path -> local path, relative to each repository root. A leading "?" marks a file that may not exist
+# at the requested tag yet (it was vendored from a later upstream commit); the local copy is then kept.
 files=(
   "proto/openshell.proto:proto/openshell.proto"
   "proto/sandbox.proto:proto/sandbox.proto"
@@ -22,6 +23,8 @@ files=(
   "proto/options.proto:proto/options.proto"
   "sdk/conformance/oauth-client-credentials.json:conformance/oauth-client-credentials.json"
   "sdk/conformance/oauth-client-credentials.json.license:conformance/oauth-client-credentials.json.license"
+  "?sdk/conformance/oidc-token-bundle.json:conformance/oidc-token-bundle.json"
+  "?sdk/conformance/oidc-token-bundle.json.license:conformance/oidc-token-bundle.json.license"
 )
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version_file="$root/UPSTREAM_VERSION"
@@ -68,11 +71,24 @@ trap 'rm -rf "$tmp"' EXIT
 for entry in "${files[@]}"; do
   src="${entry%%:*}"
   dst="${entry#*:}"
+  optional=0
+  if [[ "$src" == "?"* ]]; then
+    optional=1
+    src="${src:1}"
+  fi
   mkdir -p "$tmp/$(dirname "$dst")"
-  curl -fsSL "${auth[@]}" -o "$tmp/$dst" "https://raw.githubusercontent.com/$repo/$tag/$src"
+  status="$(curl -sSL "${auth[@]}" -o "$tmp/$dst" -w '%{http_code}' "https://raw.githubusercontent.com/$repo/$tag/$src")"
+  if [[ "$status" == 404 && $optional == 1 ]]; then
+    rm -f "$tmp/$dst"
+    echo "$src is not in $tag; keeping the local copy." >&2
+  elif [[ "$status" != 200 ]]; then
+    echo "error: fetching $src at $tag returned HTTP $status" >&2
+    exit 2
+  fi
 done
 for entry in "${files[@]}"; do
   dst="${entry#*:}"
+  [[ -f "$tmp/$dst" ]] || continue
   mkdir -p "$root/$(dirname "$dst")"
   cp "$tmp/$dst" "$root/$dst"
 done

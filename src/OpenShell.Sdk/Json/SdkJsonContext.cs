@@ -39,11 +39,15 @@ internal sealed class OidcTokenBundleDto
     [JsonPropertyName("refresh_token")]
     public string? RefreshToken { get; set; }
 
-    [JsonPropertyName("expiry")]
-    public string? Expiry { get; set; }
+    /// <summary>Unix seconds when the access token expires; absent for a token without expiry.</summary>
+    [JsonPropertyName("expires_at")]
+    public ulong? ExpiresAt { get; set; }
 
-    [JsonPropertyName("expires_in")]
-    public long ExpiresIn { get; set; }
+    [JsonPropertyName("issuer")]
+    public string? Issuer { get; set; }
+
+    [JsonPropertyName("client_id")]
+    public string? ClientId { get; set; }
 }
 
 /// <summary>The subset of the OpenID Connect discovery document the SDK uses.</summary>
