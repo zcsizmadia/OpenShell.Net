@@ -199,6 +199,6 @@ internal sealed partial class ProviderClient(ClientCore core, string workspace) 
 
     private static OpenShellException Invalid(string message) => new(OpenShellErrorKind.InvalidConfig, message);
 
-    [GeneratedRegex("^[A-Za-z_][A-Za-z0-9_]*$")]
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\z")]
     private static partial Regex KeyPattern();
 }

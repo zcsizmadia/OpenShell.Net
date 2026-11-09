@@ -121,6 +121,6 @@ public sealed partial class FakeGateway
         return new DeletionResult(DeletionOutcome.Completed, id);
     }
 
-    [GeneratedRegex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")]
+    [GeneratedRegex(@"^[a-z0-9]([-a-z0-9]*[a-z0-9])?\z")]
     internal static partial Regex DnsLabel();
 }

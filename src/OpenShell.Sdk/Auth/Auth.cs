@@ -40,7 +40,7 @@ public static partial class Auth
             inner ?? throw new ArgumentNullException(nameof(inner)),
             headers ?? throw new ArgumentNullException(nameof(headers)));
 
-    [GeneratedRegex("^[A-Za-z0-9._~-]+$")]
+    [GeneratedRegex(@"^[A-Za-z0-9._~-]+\z")]
     private static partial Regex EdgeTokenPattern();
 
     private sealed class NoAuthProvider : IAuthProvider

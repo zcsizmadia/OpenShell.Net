@@ -133,7 +133,7 @@ internal static partial class OidcHttp
 
     private static string ErrorSuffix(JsonElement root) => ErrorCode(root) is { } code ? $": {code}" : "";
 
-    [GeneratedRegex("^[A-Za-z0-9_.-]{1,64}$")]
+    [GeneratedRegex(@"^[A-Za-z0-9_.-]{1,64}\z")]
     private static partial Regex ErrorCodePattern();
 
 }
