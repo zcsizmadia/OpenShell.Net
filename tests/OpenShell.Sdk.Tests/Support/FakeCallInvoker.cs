@@ -33,6 +33,9 @@ internal sealed class DuplexChannel<TReq, TResp> : IDisposable
     /// <summary>When true, completing the request stream fails with <c>Unavailable</c>.</summary>
     public bool FailComplete { get; set; }
 
+    /// <summary>How often the client completed its request stream (real gRPC rejects a second completion).</summary>
+    public int CompleteCount { get; private set; }
+
     /// <summary>When set, the client's next read throws this exception instead of returning a frame.</summary>
     public Exception? MoveNextFault { get; set; }
 
@@ -123,6 +126,7 @@ internal sealed class DuplexChannel<TReq, TResp> : IDisposable
 
         public Task CompleteAsync()
         {
+            owner.CompleteCount++;
             owner._requests.Writer.TryComplete();
             return owner.FailComplete
                 ? Task.FromException(new RpcException(new Status(StatusCode.Unavailable, "complete failed")))
