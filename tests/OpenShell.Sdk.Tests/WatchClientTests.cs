@@ -52,6 +52,10 @@ public class WatchClientTests
         throw new RpcException(new Status(code, "stream failure"));
     }
 
+    /// <summary>
+    /// Collects a watch on a background thread. With a fake clock, advances it until the watch ends (so reconnect backoff
+    /// passes); without one, just waits. Either way the wait is bounded by <see cref="Waits.Budget"/> of real time.
+    /// </summary>
     private static async Task<List<WatchEvent>> DrainAsync(IAsyncEnumerable<WatchEvent> source, FakeTimeProvider? time = null)
     {
         var task = Task.Run(async () =>
@@ -64,13 +68,12 @@ public class WatchClientTests
 
             return all;
         });
-        for (var i = 0; i < 400 && !task.IsCompleted; i++)
+        if (time is not null)
         {
-            time?.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(1);
+            await time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1), pauseBetweenSteps: true);
         }
 
-        return await task;
+        return await task.WithinBudget();
     }
 
     [Test]
@@ -279,7 +282,7 @@ public class WatchClientTests
     [Test]
     public async Task Cancellation_during_backoff_stops_the_watch()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var invoker = new FakeCallInvoker().Stream<Wire.WatchSandboxRequest, Wire.SandboxStreamEvent>("WatchSandbox", _ => Fail(StatusCode.Unavailable));
         using var client = ClientTests.NewClient(invoker, time: time);
         using var cts = new CancellationTokenSource();
@@ -291,10 +294,14 @@ public class WatchClientTests
                 // Drain until cancelled; the test checks how the watch ends.
             }
         });
-        await Task.Delay(50);
+
+        // Cancel only once the first call has failed and the watch is waiting out its first (100 ms) backoff.
+        await time.WaitForTimerAsync(TimeSpan.FromMilliseconds(100));
+        await Assert.That(invoker.CountOf("WatchSandbox")).IsEqualTo(1);
         await cts.CancelAsync();
 
-        await Assert.That(async () => await task).Throws<OperationCanceledException>();
+        await Assert.That(async () => await task.WithinBudget()).Throws<OperationCanceledException>();
+        await Assert.That(invoker.CountOf("WatchSandbox")).IsEqualTo(1);
     }
 
     [Test]

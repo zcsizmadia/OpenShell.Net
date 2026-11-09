@@ -387,14 +387,7 @@ public class ProviderReadinessLogicTests
 
     private static Deadline NewDeadline(FakeTimeProvider time, TimeSpan timeout, CancellationToken ct = default) => new(time, timeout, ct);
 
-    private static async Task Pump(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 400 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(100));
-            await Task.Yield();
-        }
-    }
+    private static Task Pump(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromMilliseconds(100));
 
     [Test]
     public async Task Wait_polls_until_the_exact_receipt_is_ready()

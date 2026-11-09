@@ -265,7 +265,11 @@ public class OidcEdgeCaseTests
     [Test]
     public async Task Connect_with_the_default_locator_reports_unknown_gateways()
     {
-        var ex = await Assert.That(() => GatewayClient.Connect("definitely-not-registered-zz9")).Throws<OpenShellException>();
+        // This test exists to cover the default locator (no Locator option), so it must use the real user configuration
+        // directory. It only probes for one gateway whose name is unique to this run, so it cannot match or read a real
+        // registration; the not-found behaviour itself is covered against temp-directory locators in GatewayClientTests.
+        var name = "test-not-registered-" + Guid.NewGuid().ToString("N");
+        var ex = await Assert.That(() => GatewayClient.Connect(name)).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
     }

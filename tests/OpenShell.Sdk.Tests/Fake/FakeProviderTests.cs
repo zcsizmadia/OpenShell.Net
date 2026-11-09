@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Time.Testing;
 using OpenShell.Testing;
+using OpenShell.Tests.Support;
 
 namespace OpenShell.Tests;
 
@@ -464,14 +465,7 @@ public class FakeSandboxProviderTests
         return client;
     }
 
-    private static async Task Advance(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 500 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
-        }
-    }
+    private static Task Advance(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1));
 
     [Test]
     public async Task Attach_and_detach_issue_receipts_and_change_the_provider_set()

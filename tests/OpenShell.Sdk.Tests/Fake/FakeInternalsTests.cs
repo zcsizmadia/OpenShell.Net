@@ -3,7 +3,9 @@
 
 using System.Threading.Channels;
 using Grpc.Core;
+using Microsoft.Extensions.Time.Testing;
 using OpenShell.Testing;
+using OpenShell.Tests.Support;
 using Wire = Openshell.V1;
 
 namespace OpenShell.Tests;
@@ -208,7 +210,7 @@ public class FakeInternalsTests
         }
 
         call.Dispose();
-        await FakeTestHelpers.EventuallyAsync(() => gateway.InteractiveInput.Count == 1);
+        await Waits.UntilAsync(() => gateway.InteractiveInput.Count == 1);
 
         await Assert.That(kinds).IsEquivalentTo(new[] { Wire.ExecSandboxEvent.PayloadOneofCase.Exit });
     }
@@ -231,5 +233,37 @@ public class FakeInternalsTests
         await cts.CancelAsync();
 
         await Assert.That(await call.ResponseStream.MoveNext(CancellationToken.None).WaitAsync(Patience)).IsFalse();
+    }
+
+    [Test]
+    public async Task Transition_timers_are_forgotten_once_they_fire()
+    {
+        var time = new FakeTimeProvider();
+        using var gateway = new FakeGateway(new FakeGatewayOptions { TimeProvider = time });
+
+        gateway.Schedule(TimeSpan.FromSeconds(1));
+        gateway.Schedule(TimeSpan.FromSeconds(2));
+        gateway.Schedule(TimeSpan.Zero);
+        await Assert.That(gateway.PendingTimers).IsEqualTo(2);
+
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Assert.That(gateway.PendingTimers).IsEqualTo(1);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await Assert.That(gateway.PendingTimers).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Disposal_stops_pending_timers_and_later_schedules_create_none()
+    {
+        var time = new FakeTimeProvider();
+        var gateway = new FakeGateway(new FakeGatewayOptions { TimeProvider = time });
+        gateway.Schedule(TimeSpan.FromSeconds(5));
+
+        gateway.Dispose();
+        gateway.Schedule(TimeSpan.FromSeconds(5));
+
+        await Assert.That(gateway.PendingTimers).IsEqualTo(0);
+        time.Advance(TimeSpan.FromSeconds(10)); // A stopped timer must not fire into the disposed gateway.
+        await Assert.That(gateway.PendingTimers).IsEqualTo(0);
     }
 }

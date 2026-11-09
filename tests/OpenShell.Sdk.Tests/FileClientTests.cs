@@ -646,33 +646,27 @@ public class FileDownloadTests
     }
 
     [Test]
-    public async Task Download_directory_rejects_traversal_absolute_names_and_links()
+    [Arguments("../evil.txt", TarEntryType.RegularFile, null, "unsafe tar entry name")]
+    [Arguments("a/../../evil.txt", TarEntryType.RegularFile, null, "unsafe tar entry name")]
+    [Arguments(@"a\..\..\evil.txt", TarEntryType.RegularFile, null, "unsafe tar entry name")]
+    [Arguments("/etc/evil.txt", TarEntryType.RegularFile, null, "unsafe tar entry name")]
+    [Arguments("link", TarEntryType.SymbolicLink, "/etc", "refusing to extract link entry 'link'")]
+    [Arguments("hard", TarEntryType.HardLink, "target", "refusing to extract link entry 'hard'")]
+    public async Task Download_directory_rejects_traversal_absolute_names_and_links(string entryName, TarEntryType type, string? link, string reason)
     {
-        var cases = new (string Name, (string Name, string? Content, TarEntryType Type, string? Link) Entry, string Reason)[]
+        var content = type == TarEntryType.RegularFile ? "x" : null;
+        var archive = await Tar.BuildAsync(Tar.File("ok.txt", "fine"), (entryName, content, type, link));
+        using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
+        var root = TempPath("tree");
+        try
         {
-            ("parent traversal", Tar.File("../evil.txt", "x"), "unsafe tar entry name"),
-            ("nested traversal", Tar.File("a/../../evil.txt", "x"), "unsafe tar entry name"),
-            ("backslash traversal", Tar.File("a\\..\\..\\evil.txt", "x"), "unsafe tar entry name"),
-            ("absolute", Tar.File("/etc/evil.txt", "x"), "unsafe tar entry name"),
-            ("symlink", ("link", null, TarEntryType.SymbolicLink, "/etc"), "refusing to extract link entry 'link'"),
-            ("hardlink", ("hard", null, TarEntryType.HardLink, "target"), "refusing to extract link entry 'hard'"),
-        };
-        foreach (var (name, entry, reason) in cases)
+            var ex = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+            await Assert.That(ex!.Message).Contains(reason);
+            await Assert.That(File.Exists(Path.Join(Path.GetDirectoryName(root)!, "evil.txt"))).IsFalse();
+        }
+        finally
         {
-            var archive = await Tar.BuildAsync(Tar.File("ok.txt", "fine"), entry);
-            using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
-            var root = TempPath("tree");
-            try
-            {
-                var ex = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
-                await Assert.That(ex!.Message).Contains(reason);
-                await Assert.That(File.Exists(Path.Join(Path.GetDirectoryName(root)!, "evil.txt"))).IsFalse();
-                await Assert.That(name).IsNotNull();
-            }
-            finally
-            {
-                Directory.Delete(Path.GetDirectoryName(root)!, recursive: true);
-            }
+            Directory.Delete(Path.GetDirectoryName(root)!, recursive: true);
         }
     }
 
@@ -686,14 +680,20 @@ public class FileDownloadTests
         await Assert.That(FileClient.SafeTarget(root, "./")).IsNull();
         await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, ".")).IsNull();
         await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, "d.txt")).IsEqualTo(Path.Join(root, "d.txt"));
-        await Assert.That(() => FileClient.SafeTarget(root, "a\0b")).Throws<InvalidDataException>();
-        await Assert.That(() => FileClient.SafeTarget(root, "..")).Throws<InvalidDataException>();
-        await Assert.That(() => FileClient.SafeTarget(root, "x/../../y")).Throws<InvalidDataException>();
+    }
 
-        // A ".." segment is refused even when the resolved path would stay inside the root.
-        await Assert.That(() => FileClient.SafeTarget(root, "x/../y")).Throws<InvalidDataException>();
-        await Assert.That(() => FileClient.SafeTarget(root, "/abs")).Throws<InvalidDataException>();
-        await Assert.That(() => FileClient.SafeTarget(root, "\\abs")).Throws<InvalidDataException>();
+    [Test]
+    [Arguments("a\0b")]
+    [Arguments("..")]
+    [Arguments("x/../../y")]
+    [Arguments("x/../y")] // A ".." segment is refused even when the resolved path would stay inside the root.
+    [Arguments("/abs")]
+    [Arguments(@"\abs")]
+    public async Task SafeTarget_rejects_unsafe_names(string name)
+    {
+        var root = Path.GetFullPath(Path.Join(Path.GetTempPath(), "safe-root"));
+
+        await Assert.That(() => FileClient.SafeTarget(root, name)).Throws<InvalidDataException>();
     }
 
     [Test]

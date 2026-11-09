@@ -15,14 +15,7 @@ public class SandboxSuspendResumeTests
 
     private static SandboxSpec Spec() => new() { Image = "img:1" };
 
-    private static async Task AdvanceUntilDone(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 200 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
-        }
-    }
+    private static Task AdvanceUntilDone(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1));
 
     [Test]
     public async Task Suspend_sends_the_workspace_and_name()

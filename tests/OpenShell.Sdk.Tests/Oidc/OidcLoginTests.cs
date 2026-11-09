@@ -584,7 +584,7 @@ public class OidcDeviceLoginTests
         var shown = new List<(string, string)>();
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time, shown));
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
         var tokens = await task;
 
         await Assert.That(tokens.AccessToken).IsEqualTo("dev-access");
@@ -601,7 +601,7 @@ public class OidcDeviceLoginTests
     [Test]
     public async Task Slow_down_adds_five_seconds_to_the_interval()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var polls = new Queue<HttpResponseMessage>([
             StubHandler.Json("""{"error":"slow_down"}""", HttpStatusCode.BadRequest),
             StubHandler.Json("""{"access_token":"a"}"""),
@@ -609,20 +609,25 @@ public class OidcDeviceLoginTests
         var handler = StubHandler.Provider(Issuer, token: _ => polls.Dequeue(), device: _ => StubHandler.Json(DeviceJson(interval: 5)), deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await AdvanceAsync(time, 5);
-        await AdvanceAsync(time, 9);
+        await handler.WaitForRequestsAsync("/device", 1);
+        await time.AdvanceWhenWaitingAsync(5);
+        await handler.WaitForRequestsAsync("/token", 1);
 
         // The first poll at 5 s answered slow_down, so the next one waits 10 s, not 5.
+        await time.WaitForTimerAsync(TimeSpan.FromSeconds(10));
+        time.Advance(TimeSpan.FromSeconds(9));
         await Assert.That(task.IsCompleted).IsFalse();
-        await Assert.That(handler.Requests.Count(r => r.Url.AbsolutePath == "/token")).IsEqualTo(1);
-        await AdvanceAsync(time, 1);
-        await Assert.That((await task.WaitAsync(TimeSpan.FromSeconds(10))).AccessToken).IsEqualTo("a");
+        await Assert.That(handler.CountTo("/token")).IsEqualTo(1);
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        await Assert.That((await task.WithinBudget()).AccessToken).IsEqualTo("a");
+        await Assert.That(handler.CountTo("/token")).IsEqualTo(2);
     }
 
     [Test]
     public async Task A_one_second_interval_is_honored()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var handler = StubHandler.Provider(
             Issuer,
             token: _ => StubHandler.Json("""{"access_token":"a"}"""),
@@ -630,9 +635,11 @@ public class OidcDeviceLoginTests
             deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await AdvanceAsync(time, 1);
+        await handler.WaitForRequestsAsync("/device", 1);
+        await time.AdvanceWhenWaitingAsync(1);
 
-        await Assert.That((await task.WaitAsync(TimeSpan.FromSeconds(10))).AccessToken).IsEqualTo("a");
+        await Assert.That((await task.WithinBudget()).AccessToken).IsEqualTo("a");
+        await Assert.That(handler.CountTo("/token")).IsEqualTo(1);
     }
 
     [Test]
@@ -646,23 +653,22 @@ public class OidcDeviceLoginTests
             deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         await Assert.That((await task).AccessToken).IsEqualTo("a");
     }
 
-    private static async Task AdvanceAsync(FakeTimeProvider time, int seconds)
-    {
-        // Let the login reach its next timer before moving the clock.
-        await Task.Delay(50);
-        time.Advance(TimeSpan.FromSeconds(seconds));
-        await Task.Delay(50);
-    }
+    /// <summary>
+    /// Drives a device login on the fake clock to its end. The stub HTTP exchange can finish on another thread, so the
+    /// pump pauses between steps to let it keep pace with the clock.
+    /// </summary>
+    private static Task Pump(FakeTimeProvider time, Task task) =>
+        time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1), pauseBetweenSteps: true);
 
     [Test]
     public async Task Missing_interval_defaults_to_five_seconds()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var handler = StubHandler.Provider(
             Issuer,
             token: _ => StubHandler.Json("""{"access_token":"a"}"""),
@@ -670,13 +676,14 @@ public class OidcDeviceLoginTests
             deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await Task.Delay(50);
+        await handler.WaitForRequestsAsync("/device", 1);
+        await time.WaitForTimerAsync(TimeSpan.FromSeconds(5));
         time.Advance(TimeSpan.FromSeconds(4));
-        await Task.Delay(50);
         await Assert.That(task.IsCompleted).IsFalse();
+        await Assert.That(handler.CountTo("/token")).IsEqualTo(0);
         time.Advance(TimeSpan.FromSeconds(1));
 
-        await Assert.That((await task).AccessToken).IsEqualTo("a");
+        await Assert.That((await task.WithinBudget()).AccessToken).IsEqualTo("a");
     }
 
     [Test]
@@ -694,7 +701,7 @@ public class OidcDeviceLoginTests
             deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.DeviceCode);
@@ -709,7 +716,7 @@ public class OidcDeviceLoginTests
         var handler = StubHandler.Provider(Issuer, token: _ => Pending(), device: _ => StubHandler.Json(DeviceJson(expiresIn: 12, interval: 5)), deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
@@ -724,7 +731,7 @@ public class OidcDeviceLoginTests
         var options = Options(handler, time) with { Timeout = TimeSpan.FromSeconds(30) };
 
         var task = OidcLogin.DeviceLoginAsync(options);
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
@@ -781,7 +788,7 @@ public class OidcDeviceLoginTests
 
         // TUnit captures the console per test.
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time) with { DisplayDeviceCode = null });
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         await Assert.That((await task).AccessToken).IsEqualTo("a");
         var output = TestContext.Current!.GetStandardOutput();
@@ -796,7 +803,7 @@ public class OidcDeviceLoginTests
         var handler = StubHandler.Provider(Issuer, token: _ => StubHandler.Json("[1]"), device: _ => StubHandler.Json(DeviceJson()), deviceEndpoint: true);
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
-        await time.AdvanceUntilDone(task);
+        await Pump(time, task);
 
         await Assert.That(async () => await task).Throws<OidcException>();
     }
@@ -804,15 +811,17 @@ public class OidcDeviceLoginTests
     [Test]
     public async Task Cancellation_stops_polling()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var handler = StubHandler.Provider(Issuer, token: _ => Pending(), device: _ => StubHandler.Json(DeviceJson()), deviceEndpoint: true);
         using var cts = new CancellationTokenSource();
 
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time), cts.Token);
-        await Task.Delay(50);
+        await handler.WaitForRequestsAsync("/device", 1);
+        await time.WaitForTimerAsync(TimeSpan.FromSeconds(5));
         await cts.CancelAsync();
 
-        await Assert.That(async () => await task).Throws<OperationCanceledException>();
+        await Assert.That(async () => await task.WithinBudget()).Throws<OperationCanceledException>();
+        await Assert.That(handler.CountTo("/token")).IsEqualTo(0);
     }
 
     [Test]

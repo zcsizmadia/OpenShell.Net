@@ -12,14 +12,7 @@ public class SandboxProviderClientTests
 {
     private static Wire.Sandbox WireSandbox() => ClientTests.SandboxReply("sandbox").Sandbox;
 
-    private static async Task Pump(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 400 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(100));
-            await Task.Yield();
-        }
-    }
+    private static Task Pump(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromMilliseconds(100));
 
     [Test]
     public async Task Attach_sends_guards_and_maps_the_receipt()

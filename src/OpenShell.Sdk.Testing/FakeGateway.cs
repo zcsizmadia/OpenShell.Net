@@ -295,6 +295,25 @@ public sealed partial class FakeGateway : IDisposable
         previous.TrySetResult();
     }
 
+    /// <summary>The number of transition timers still waiting to fire, for tests.</summary>
+    internal int PendingTimers
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return _timers.Count;
+            }
+        }
+    }
+
+    /// <summary>Wakes the gateway after <paramref name="delay"/> so a timed transition settles and blocked watchers see it.</summary>
+    /// <remarks>
+    /// A timer forgets itself when it fires, so a long-lived gateway does not accumulate spent timers, and no timer
+    /// outlives disposal: one created while <see cref="Dispose"/> runs is dropped instead of registered. The timer is
+    /// created outside <see cref="Sync"/> (a clock may run callbacks under its own lock), so a callback can run before
+    /// registration; <see cref="ScheduledWake"/> records that, and registration then drops the spent timer.
+    /// </remarks>
     internal void Schedule(TimeSpan delay)
     {
         if (delay <= TimeSpan.Zero)
@@ -302,22 +321,47 @@ public sealed partial class FakeGateway : IDisposable
             return;
         }
 
-        // Disposal stops every timer first, and settling after a racing callback is harmless, so no disposed check.
-        var timer = Time.CreateTimer(
-            _ =>
-            {
-                lock (Sync)
-                {
-                    SettleLocked();
-                }
-            },
-            null,
-            delay,
-            Timeout.InfiniteTimeSpan);
+        var wake = new ScheduledWake();
+        var timer = Time.CreateTimer(state => Wake((ScheduledWake)state!), wake, delay, Timeout.InfiniteTimeSpan);
+        bool keep;
         lock (Sync)
         {
-            _timers.Add(timer);
+            keep = !_disposed && !wake.Fired;
+            if (keep)
+            {
+                wake.Timer = timer;
+                _timers.Add(timer);
+            }
         }
+
+        if (!keep)
+        {
+            timer.Dispose();
+        }
+    }
+
+    private void Wake(ScheduledWake wake)
+    {
+        ITimer? timer;
+        lock (Sync)
+        {
+            wake.Fired = true;
+            if (_disposed)
+            {
+                return; // Disposal already stopped and forgot every timer.
+            }
+
+            // Null when the timer fired before Schedule registered it; Schedule then drops it itself.
+            timer = wake.Timer;
+            if (timer is not null)
+            {
+                _timers.Remove(timer);
+            }
+
+            SettleLocked();
+        }
+
+        timer?.Dispose();
     }
 
     internal static bool Matches(string pattern, string operation) =>
@@ -344,5 +388,13 @@ public sealed partial class FakeGateway : IDisposable
         public OpenShellException Error { get; } = error;
 
         public int Remaining { get; set; } = remaining;
+    }
+
+    /// <summary>One scheduled wake-up: its timer once registered, and whether it has fired. Guarded by <see cref="Sync"/>.</summary>
+    private sealed class ScheduledWake
+    {
+        public ITimer? Timer { get; set; }
+
+        public bool Fired { get; set; }
     }
 }

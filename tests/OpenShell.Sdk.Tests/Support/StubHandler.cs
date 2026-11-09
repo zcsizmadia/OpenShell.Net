@@ -17,22 +17,61 @@ internal sealed record RecordedRequest(HttpMethod Method, Uri Url, string Body, 
 /// <summary>An <see cref="HttpMessageHandler"/> that records requests and answers them from a delegate.</summary>
 internal sealed class StubHandler : HttpMessageHandler
 {
+    private TaskCompletionSource _arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public List<RecordedRequest> Requests { get; } = [];
 
     public Func<RecordedRequest, HttpResponseMessage> Respond { get; set; } =
         _ => new HttpResponseMessage(HttpStatusCode.NotFound);
 
-    public int CountTo(string pathSuffix) => Requests.Count(r => r.Url.AbsolutePath.EndsWith(pathSuffix, StringComparison.Ordinal));
+    public int CountTo(string pathSuffix)
+    {
+        lock (Requests)
+        {
+            return Requests.Count(r => r.Url.AbsolutePath.EndsWith(pathSuffix, StringComparison.Ordinal));
+        }
+    }
+
+    /// <summary>
+    /// Waits until at least <paramref name="count"/> requests to a path ending in <paramref name="pathSuffix"/> have
+    /// arrived (bounded by <see cref="Waits.Budget"/>). Signals when a request arrives, before it is answered.
+    /// </summary>
+    public async Task WaitForRequestsAsync(string pathSuffix, int count)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            Task arrived;
+            lock (Requests)
+            {
+                if (Requests.Count(r => r.Url.AbsolutePath.EndsWith(pathSuffix, StringComparison.Ordinal)) >= count)
+                {
+                    return;
+                }
+
+                arrived = _arrived.Task;
+            }
+
+            await Waits.SignalWithin(
+                arrived,
+                Waits.Budget - clock.Elapsed,
+                $"{count} request(s) to '*{pathSuffix}' did not arrive within {Waits.Budget.TotalSeconds:0} s of real time.");
+        }
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
         var recorded = new RecordedRequest(request.Method, request.RequestUri!, body, request.Headers);
+        TaskCompletionSource arrived;
         lock (Requests)
         {
             Requests.Add(recorded);
+            arrived = _arrived;
+            _arrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
+        arrived.TrySetResult();
         return Respond(recorded);
     }
 
