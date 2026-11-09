@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 
 # Style and analyzer configuration for the .NET SDK. It is scoped to this directory
@@ -21,7 +21,7 @@ trim_trailing_whitespace = false
 
 [*.cs]
 # Every source file starts with the SPDX header the repository's license checks expect.
-file_header_template = SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\nSPDX-License-Identifier: Apache-2.0
+file_header_template = SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia\nSPDX-License-Identifier: Apache-2.0
 dotnet_diagnostic.IDE0073.severity = error
 
 # IDE0130: the public API lives in one flat `OpenShell` namespace so consumers need a single using, as with

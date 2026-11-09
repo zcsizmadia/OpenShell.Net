@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
     SPDX-License-Identifier: Apache-2.0
   -->
   <PropertyGroup>
     <TargetFrameworks>$(OpenShellSdkTargetFrameworks)</TargetFrameworks>
     <RootNamespace>OpenShell.DependencyInjection</RootNamespace>
     <AssemblyName>OpenShell.Sdk.DependencyInjection</AssemblyName>
-    <PackageId>OpenShell.Sdk.DependencyInjection</PackageId>
-    <Description>Microsoft.Extensions.DependencyInjection, options, and health check integration for the OpenShell .NET SDK.</Description>
-    <PackageTags>openshell;dependencyinjection;di;extensions</PackageTags>
+    <PackageId>OpenShell.Net.DependencyInjection</PackageId>
+    <Description>Microsoft.Extensions.DependencyInjection, options, and health check integration for OpenShell.Net, the unofficial .NET SDK for NVIDIA OpenShell.</Description>
+    <PackageTags>openshell;nvidia-openshell;dependencyinjection;di;extensions</PackageTags>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 

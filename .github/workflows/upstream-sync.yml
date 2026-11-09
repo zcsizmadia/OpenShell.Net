@@ -1,0 +1,125 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+# Weekly: if NVIDIA/OpenShell has a newer release than UPSTREAM_VERSION, sync the vendored protos and
+# conformance fixtures with scripts/sync-upstream.sh, run the full check against them, and open (or update)
+# a pull request with the result. Run it by hand with a ref to sync to a specific tag or commit.
+#
+# Pull requests opened with the workflow token do not trigger the CI workflow, so this job runs the checks
+# itself and reports them in the pull request body. Requires the repository setting
+# "Allow GitHub Actions to create and approve pull requests".
+
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: NVIDIA/OpenShell tag or commit to sync to (default latest release)
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  sync:
+    name: Sync from NVIDIA/OpenShell
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve target
+        id: target
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          current="$(tr -d '[:space:]' < UPSTREAM_VERSION)"
+          target="${INPUT_REF:-$(scripts/sync-upstream.sh --latest)}"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          if [[ "$current" == "$target" ]]; then
+            echo "Already at $target."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sync files
+        if: steps.target.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          scripts/sync-upstream.sh "$TARGET"
+          git --no-pager diff --stat
+
+      - name: Set up .NET
+        if: steps.target.outputs.changed == 'true'
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
+
+      - name: Check against the synced files
+        id: check
+        if: steps.target.outputs.changed == 'true'
+        run: |
+          set +e
+          scripts/ci.sh all > check.log 2>&1
+          status=$?
+          set -e
+          tail -n 60 check.log
+          if [[ $status -eq 0 ]]; then
+            echo "result=passed" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open pull request
+        if: steps.target.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.target.outputs.current }}
+          TARGET: ${{ steps.target.outputs.target }}
+          RESULT: ${{ steps.check.outputs.result }}
+        run: |
+          branch="upstream-sync/$TARGET"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add UPSTREAM_VERSION proto conformance
+          git commit -m "chore(upstream): sync protos and conformance fixtures to NVIDIA/OpenShell $TARGET"
+          git push --force origin "$branch"
+
+          {
+            echo "Syncs the vendored protos and conformance fixtures from NVIDIA/OpenShell $CURRENT to $TARGET."
+            echo
+            echo "- Upstream changes: https://github.com/NVIDIA/OpenShell/compare/$CURRENT...$TARGET"
+            echo "- Format, build, unit tests on every framework, and pack against the synced files: **$RESULT** (log in the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+            echo
+            echo "New RPCs or messages in the protos are not wrapped by the SDK yet: review the proto diff and update PARITY.md."
+            echo "Pull requests opened by this workflow do not trigger CI; close and reopen the pull request, or push a commit, to run it."
+          } > body.md
+
+          if gh pr view "$branch" --json state --jq .state 2>/dev/null | grep -q OPEN; then
+            gh pr edit "$branch" --body-file body.md
+          else
+            gh pr create --head "$branch" --base main \
+              --title "chore(upstream): sync to NVIDIA/OpenShell $TARGET" --body-file body.md
+          fi
+          if [[ "$RESULT" != "passed" ]]; then
+            echo "::warning::Checks failed against NVIDIA/OpenShell $TARGET; see the pull request."
+          fi

@@ -1,37 +1,31 @@
 <!--
-SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# OpenShell.Sdk
+# OpenShell.Net: unofficial .NET (C#) SDK for NVIDIA OpenShell
 
-.NET client for the [OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It targets `net8.0` and `net10.0`, is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
+.NET client for the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It targets `net8.0`, `net10.0`, and `net11.0`, is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
 
-Use the SDK and gateway from the same OpenShell release when possible. The generated protobuf bindings come from the `proto/` directory of that release, and curated methods stay compatible while the underlying RPC contracts do.
+> This is a community project. It is not affiliated with, endorsed by, or supported by NVIDIA. Report problems in this repository's [issues](https://github.com/zcsizmadia/OpenShell.Net/issues), not upstream.
+
+The generated protobuf bindings come from the `proto/` files of the OpenShell release recorded in [`UPSTREAM_VERSION`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/UPSTREAM_VERSION). Use a gateway from that release or a compatible one: curated methods stay compatible while the underlying RPC contracts do. [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) tracks which gateway features the SDK covers.
 
 ## Install
 
-The package is published to the NVIDIA GitHub Packages NuGet feed. Add the feed to a `nuget.config` next to your solution:
-
-```xml
-<configuration>
-  <packageSources>
-    <add key="nvidia" value="https://nuget.pkg.github.com/NVIDIA/index.json" />
-  </packageSources>
-  <packageSourceCredentials>
-    <nvidia>
-      <add key="Username" value="YOUR_GITHUB_USER" />
-      <add key="ClearTextPassword" value="%GITHUB_TOKEN%" />
-    </nvidia>
-  </packageSourceCredentials>
-</configuration>
-```
-
-Use a GitHub token with `read:packages`, then add the package:
+The packages are published to [nuget.org](https://www.nuget.org/packages/OpenShell.Net):
 
 ```shell
-dotnet add package OpenShell.Sdk
+dotnet add package OpenShell.Net
 ```
+
+| Package | Contents |
+| --- | --- |
+| `OpenShell.Net` | The client: every user-facing RPC, authentication, OIDC, gateway discovery, edge tunnel, retries, telemetry |
+| `OpenShell.Net.DependencyInjection` | `AddOpenShell`, the `AddOpenShellClient` builder, and an ASP.NET health check |
+| `OpenShell.Net.Testing` | `FakeOpenShellClient`, an in-memory gateway for unit tests |
+
+The public API lives in the `OpenShell` namespace, and the assemblies are named `OpenShell.Sdk*`.
 
 ## Quick start
 
@@ -293,7 +287,7 @@ var credentials = await operatorClient.Providers.GetCredentialsAsync(
 
 ## Dependency injection
 
-The `OpenShell.Sdk.DependencyInjection` package registers a singleton `IOpenShellClient`, plus its per-area clients, with `Microsoft.Extensions.DependencyInjection`. Options are validated at startup, so a bad address, an unreadable certificate, or a token headed for plaintext HTTP fails when the host starts instead of on the first call.
+The `OpenShell.Net.DependencyInjection` package registers a singleton `IOpenShellClient`, plus its per-area clients, with `Microsoft.Extensions.DependencyInjection`. Options are validated at startup, so a bad address, an unreadable certificate, or a token headed for plaintext HTTP fails when the host starts instead of on the first call.
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -350,7 +344,7 @@ Set `OpenShellClientOptions.LoggerFactory` to receive the SDK's own log events: 
 
 ## Testing
 
-`OpenShell.Sdk.Testing` provides `FakeOpenShellClient`, an in-memory gateway that implements every `IOpenShellClient` area with the same error kinds as the real client. It keeps workspace-scoped state, paginates with real page tokens, advances sandbox phases on a `TimeProvider` you control, and streams watch events with cursors. Script command results, inject failures, and inspect the recorded calls through `Gateway`:
+`OpenShell.Net.Testing` provides `FakeOpenShellClient`, an in-memory gateway that implements every `IOpenShellClient` area with the same error kinds as the real client. It keeps workspace-scoped state, paginates with real page tokens, advances sandbox phases on a `TimeProvider` you control, and streams watch events with cursors. Script command results, inject failures, and inspect the recorded calls through `Gateway`:
 
 ```csharp
 using OpenShell;
@@ -370,10 +364,27 @@ Write your own code against `IOpenShellClient` and its per-area interfaces, such
 
 ## Build from source
 
-Protobuf bindings are generated at build time from the repository `proto/` directory and are never committed. From the repository root:
+Protobuf bindings are generated at build time from the repository `proto/` directory and are never committed. You need the .NET 11 SDK and the .NET 8 and .NET 10 runtimes. From the repository root, in Bash (Git Bash on Windows):
 
 ```shell
-mise run sdk:dotnet:ci
+scripts/ci.sh            # format check, build, unit tests on every framework, coverage summary, pack
+scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack
 ```
 
-The task runs the format check, builds both target frameworks, runs the TUnit tests with a coverage summary, and packs the NuGet package. It needs the .NET 8 and .NET 10 SDKs.
+The integration tests run against a real gateway and skip unless `OPENSHELL_GATEWAY_ADDRESS` is set (see `tests/OpenShell.Sdk.IntegrationTests/GatewayFixture.cs` for the token, CA, and mTLS variables).
+
+## Staying in sync with NVIDIA OpenShell
+
+The gRPC protos (`proto/`) and the shared SDK conformance fixtures (`conformance/`) are vendored unmodified from an NVIDIA/OpenShell release, recorded in `UPSTREAM_VERSION`:
+
+```shell
+scripts/sync-upstream.sh --check   # is UPSTREAM_VERSION the latest release?
+scripts/sync-upstream.sh           # sync to the latest release
+scripts/sync-upstream.sh v0.1.7    # or to a specific tag or commit
+```
+
+A weekly workflow does this automatically. When upstream publishes a release, it opens a pull request with the synced files and the result of the full check against them.
+
+## License
+
+Apache-2.0. See [LICENSE](https://github.com/zcsizmadia/OpenShell.Net/blob/main/LICENSE) and [NOTICE](https://github.com/zcsizmadia/OpenShell.Net/blob/main/NOTICE). The vendored protos and fixtures are Copyright NVIDIA Corporation & Affiliates, also under Apache-2.0.

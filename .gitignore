@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 
 TestResults/
@@ -8,6 +8,6 @@ artifacts/
 bin/
 obj/
 
-# The repository-wide `rootfs/` ignore rule also matches Rootfs/ on case-insensitive
-# file systems; the SDK source directory must stay tracked.
+# Keep the SDK source directory Rootfs/ tracked even if a global `rootfs/` ignore rule
+# matches it on a case-insensitive file system.
 !Rootfs/

@@ -1,5 +1,5 @@
 <!--
-SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -16,12 +16,14 @@ Sources: G Go, R Rust, T TypeScript, P Python.
 
 | Measure | Result |
 |---|---|
-| User-facing RPCs in the `OpenShell` service | ✅ 65 of 65 called by the curated client |
+| User-facing RPCs in the `OpenShell` service | ⚠️ 65 of 67 called by the curated client; `SuspendSandbox` and `ResumeSandbox` (new in v0.1.7) are reachable only through `OpenShellClient.Raw` |
+| `SandboxUpdates` service (`UpdateSandbox`, new in v0.1.7; needs compute-driver support and explicit gateway activation) | ⬜ not wired; the generated `SandboxUpdates.SandboxUpdatesClient` is compiled into the package |
 | Supervisor and sandbox-internal RPCs (`ConnectSupervisor`, `RelayStream`, `PeerRelay`, `Peer*`, `PushSandboxLogs`, `Report*`, `FinalizeMainProcessExit`, `GetSandboxProviderEnvironment`, `ExchangeProviderSubjectToken`, `IssueSandboxToken`, `RefreshSandboxToken`, `SubmitPolicyAnalysis`) | Excluded by design; no SDK implements them. Reachable through `OpenShellClient.Raw`. |
 | Extension services (`ComputeDriver`, `CredentialDriver`, `GatewayInterceptor`, `SupervisorMiddleware`) | Excluded: they are contracts to implement, not call |
 
 "Called" means the RPC is wired and unit tested against an in-memory gRPC invoker. See Testing for what has
-and has not run against a real gateway.
+and has not run against a real gateway. Counts are against the protos of the NVIDIA/OpenShell release in
+`UPSTREAM_VERSION` (v0.1.7).
 
 ## Client surface (`IOpenShellClient`)
 
@@ -30,6 +32,7 @@ and has not run against a real gateway.
 | Health | `CheckAsync`, `GetGatewayInfoAsync`, `GetCurrentUserAsync` | G R T P | ✅ |
 | Workspaces | create, get, list, delete, add/remove/list members, `InWorkspace(name)` scoped view | G R P | ✅ |
 | Sandboxes | create, create from template, get, list, list IDs, stop, start, delete (typed `DeletionResult`) | G R T P | ✅ |
+| Sandbox suspend, resume, and update | `SuspendSandbox`, `ResumeSandbox`, `SandboxUpdates.UpdateSandbox` (v0.1.7) | | ⬜ |
 | Sandbox waits | `WaitReadyAsync`, `WaitStoppedAsync`, `WaitDeletedAsync` with `ExpectedSandboxId` | G R T P | ✅ |
 | Sandbox watch and logs | `WatchAsync`, `WatchLogsAsync`, `GetLogsAsync`, cursor resume, reconnect with backoff | G R | ✅ |
 | Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ |
@@ -107,13 +110,13 @@ and has not run against a real gateway.
 
 | Feature | Status |
 |---|---|
-| NuGet packages `OpenShell.Sdk`, `OpenShell.Sdk.DependencyInjection`, and `OpenShell.Sdk.Testing`, with shared metadata and README | ✅ all three pack locally |
+| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE | ✅ all three pack locally; not yet published |
 | `OpenShell.Sdk.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
-| README and published docs page | ✅ |
-| `tasks/dotnet.toml`, `sdk-dotnet` branch job, NuGet publish job | ⚠️ written; no workflow has run in CI |
-| .NET SDK in the CI image | ⬜ the job installs it with `actions/setup-dotnet` instead |
+| README | ✅ |
+| `scripts/ci.sh`, CI workflow (Linux and Windows), nuget.org release workflow (Trusted Publishing) | ⚠️ written; no workflow has run yet |
+| Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh`, weekly sync pull request, drift check in CI | ⚠️ the script runs locally; the workflows have not run yet |
 | Editorconfig with analyzer severities and SPDX header enforcement | ✅ |
 
 ## Known differences from the other SDKs
