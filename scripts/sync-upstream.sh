@@ -93,4 +93,10 @@ for entry in "${files[@]}"; do
   cp "$tmp/$dst" "$root/$dst"
 done
 printf '%s\n' "$tag" > "$version_file"
+# The README's NVIDIA OpenShell badge and its link name the release; shields.io escapes "-" as "--" in badge text.
+badge_tag="${tag//-/--}"
+sed -i -E \
+  -e "s#(badge/NVIDIA%20OpenShell-)[^?]*(-76B900\?)#\1${badge_tag}\2#" \
+  -e "s#(github\.com/NVIDIA/OpenShell/releases/tag/)[^)]*\)#\1${tag})#" \
+  "$root/README.md"
 echo "Synced vendored files from $repo $tag (was $current)."
