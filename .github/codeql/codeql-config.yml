@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+# CodeQL analyses the shipped code. Compiler-generated sources (source generators write them under obj/) and
+# code that never ships (tests, the package smoke apps, the documentation snippets) are left out, so alerts are about
+# code we write and publish.
+name: OpenShell.Net
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - "**/obj/**"
+  - tests
+  - docs/snippets
