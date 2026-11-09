@@ -67,7 +67,7 @@ public class OidcLoginTests
         await Assert.That(auth["client_id"]).IsEqualTo("cli");
         await Assert.That(auth["scope"]).IsEqualTo("openid profile email");
         await Assert.That(auth["code_challenge_method"]).IsEqualTo("S256");
-        await Assert.That(auth["redirect_uri"].StartsWith("http://localhost:", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(auth["redirect_uri"]).IsEqualTo($"http://localhost:{options.CallbackPort}/callback");
 
         var form = handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
         await Assert.That(form["grant_type"]).IsEqualTo("authorization_code");
@@ -225,6 +225,7 @@ public class OidcLoginTests
         var broken = eof with { KeyboardInput = new ThrowingReader() };
         var ex3 = await Assert.That(async () => await OidcLogin.LoginAsync(broken)).Throws<OidcException>();
         await Assert.That(ex3!.Failure).IsEqualTo(OidcFailure.AuthCode);
+        await Assert.That(ex3.Message).IsEqualTo("failed to read authorization code");
     }
 
     private sealed class ThrowingReader : TextReader
@@ -274,11 +275,19 @@ public class OidcLoginTests
             }
 
             var handler = StubHandler.Provider(Issuer, _ => TokenOk());
-            var options = Options(handler) with { CallbackPort = 0, KeyboardInput = new StringReader("kb\n"), KeyboardOutput = new StringWriter() };
+            var launched = 0;
+            ValueTask Launcher(Uri url, CancellationToken ct)
+            {
+                launched++;
+                throw new InvalidOperationException("no browser");
+            }
+
+            var options = Options(handler, Launcher) with { CallbackPort = 0, KeyboardInput = new StringReader("kb\n"), KeyboardOutput = new StringWriter() };
 
             await OidcLogin.LoginAsync(options);
 
             await Assert.That(handler.Requests.Single(r => r.Method == HttpMethod.Post).Form["code"]).IsEqualTo("kb");
+            await Assert.That(launched).IsEqualTo(0);
         }
         finally
         {
@@ -286,6 +295,42 @@ public class OidcLoginTests
             {
                 l.Stop();
             }
+        }
+    }
+
+    [Test]
+    public async Task Callback_ports_are_the_configured_one_or_the_defaults()
+    {
+        await Assert.That(OidcLogin.CallbackPorts(4242)).IsEquivalentTo(new[] { 4242 });
+        await Assert.That(OidcLogin.CallbackPorts(0)).IsEquivalentTo(new[] { 8000, 18000 });
+    }
+
+    [Test]
+    public async Task Callback_server_starts_on_the_first_free_port()
+    {
+        var busy = new TcpListener(IPAddress.Loopback, 0);
+        busy.Start();
+        try
+        {
+            var busyPort = ((IPEndPoint)busy.LocalEndpoint).Port;
+            var first = TestPorts.Free();
+            var second = TestPorts.Free();
+
+            await using (var server = OidcLogin.StartCallbackServer([first, second], "s"))
+            {
+                await Assert.That(server!.Port).IsEqualTo(first);
+            }
+
+            await using (var server = OidcLogin.StartCallbackServer([busyPort, second], "s"))
+            {
+                await Assert.That(server!.Port).IsEqualTo(second);
+            }
+
+            await Assert.That(OidcLogin.StartCallbackServer([busyPort], "s")).IsNull();
+        }
+        finally
+        {
+            busy.Stop();
         }
     }
 
@@ -298,6 +343,7 @@ public class OidcLoginTests
         var ex = await Assert.That(async () => await OidcLogin.LoginAsync(options)).Throws<OidcException>();
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
+        await Assert.That(ex.Message).IsEqualTo("login timed out");
     }
 
     [Test]
@@ -481,6 +527,7 @@ public class OidcLoginTests
         var ex = await Assert.That(async () => await OidcLogin.RefreshAsync(options, "r")).Throws<OidcException>();
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
+        await Assert.That(ex.Message).IsEqualTo("token refresh timed out");
     }
 
     private sealed class SlowTokenHandler : HttpMessageHandler
@@ -669,6 +716,7 @@ public class OidcDeviceLoginTests
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
+        await Assert.That(ex.Message).IsEqualTo("login timed out");
     }
 
     [Test]

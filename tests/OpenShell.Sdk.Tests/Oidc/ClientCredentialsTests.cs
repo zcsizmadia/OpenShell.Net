@@ -309,7 +309,20 @@ public class ClientCredentialsTests
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
         await Assert.That(ex.Kind).IsEqualTo(OpenShellErrorKind.DeadlineExceeded);
+        await Assert.That(ex.Message).IsEqualTo("client credentials exchange timed out");
         gate.TrySetResult();
+    }
+
+    [Test]
+    public async Task One_shot_exchange_requires_a_secret_before_any_request()
+    {
+        var handler = TokenServer(_ => Ok());
+
+        var ex = await Assert.That(async () => await OidcLogin.ClientCredentialsAsync(Options(handler) with { ClientSecret = null })).Throws<OidcException>();
+
+        await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.ClientCredentials);
+        await Assert.That(ex.Message).IsEqualTo("client secret is required (set ClientSecret or ClientSecretProvider)");
+        await Assert.That(handler.Requests.Count).IsEqualTo(0);
     }
 
     private sealed class SlowHandler(HttpMessageHandler inner) : DelegatingHandler(inner)
