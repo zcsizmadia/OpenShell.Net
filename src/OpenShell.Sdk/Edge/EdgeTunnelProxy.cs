@@ -83,8 +83,7 @@ public sealed partial class EdgeTunnelProxy : IAsyncDisposable, IDisposable
     public static EdgeTunnelProxy Start(string gatewayEndpoint, string edgeToken, EdgeTunnelOptions? options = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gatewayEndpoint);
-        ArgumentException.ThrowIfNullOrWhiteSpace(edgeToken);
-        _ = Auth.CloudflareAccess(edgeToken); // Validates the token is cookie/header safe.
+        _ = Auth.CloudflareAccess(edgeToken); // Validates the token: not blank, and cookie/header safe.
         options ??= new EdgeTunnelOptions();
 
         var url = ToTunnelUrl(gatewayEndpoint);
@@ -175,21 +174,28 @@ public sealed partial class EdgeTunnelProxy : IAsyncDisposable, IDisposable
 
     private async Task AcceptLoopAsync()
     {
-        while (!_lifetime.IsCancellationRequested)
+        while (await TryAcceptAsync().ConfigureAwait(false) is { } client)
         {
-            TcpClient client;
-            try
-            {
-                client = await _listener.AcceptTcpClientAsync(_lifetime.Token).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException)
-            {
-                return;
-            }
-
             var task = BridgeAsync(client);
             _connections[task] = 0;
             _ = task.ContinueWith(t => _connections.TryRemove(t, out _), TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>Accepts the next local connection, or returns null once the proxy is shutting down.</summary>
+    /// <remarks>
+    /// <see cref="TcpListener.AcceptTcpClientAsync(CancellationToken)"/> throws <see cref="InvalidOperationException"/> when the
+    /// listener is already stopped, which happens when <see cref="DisposeAsync"/> runs between two accepts.
+    /// </remarks>
+    private async Task<TcpClient?> TryAcceptAsync()
+    {
+        try
+        {
+            return await _listener.AcceptTcpClientAsync(_lifetime.Token).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is OperationCanceledException or ObjectDisposedException or SocketException or InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -264,37 +270,28 @@ public sealed partial class EdgeTunnelProxy : IAsyncDisposable, IDisposable
     private static async Task UploadAsync(NetworkStream stream, WebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[BufferSize];
-        while (true)
+        int read;
+        while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
         {
-            var read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false);
-            if (read == 0)
-            {
-                if (socket.State == WebSocketState.Open)
-                {
-                    await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, ct).ConfigureAwait(false);
-                }
-
-                return;
-            }
-
             await socket.SendAsync(buffer.AsMemory(0, read), WebSocketMessageType.Binary, endOfMessage: true, ct).ConfigureAwait(false);
+        }
+
+        if (socket.State == WebSocketState.Open)
+        {
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, ct).ConfigureAwait(false);
         }
     }
 
     private static async Task DownloadAsync(TcpClient local, NetworkStream stream, WebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[BufferSize];
-        while (true)
+        ValueWebSocketReceiveResult result;
+        while ((result = await socket.ReceiveAsync(buffer.AsMemory(), ct).ConfigureAwait(false)).MessageType != WebSocketMessageType.Close)
         {
-            var result = await socket.ReceiveAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
-            if (result.MessageType == WebSocketMessageType.Close)
-            {
-                local.Client.Shutdown(SocketShutdown.Send);
-                return;
-            }
-
             await stream.WriteAsync(buffer.AsMemory(0, result.Count), ct).ConfigureAwait(false);
         }
+
+        local.Client.Shutdown(SocketShutdown.Send);
     }
 
     private async ValueTask<WebSocket> DefaultConnectorAsync(Uri url, IReadOnlyDictionary<string, string> headers, CancellationToken ct)

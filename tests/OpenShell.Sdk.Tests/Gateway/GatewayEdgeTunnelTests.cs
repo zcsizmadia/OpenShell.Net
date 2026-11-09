@@ -10,10 +10,11 @@ namespace OpenShell.Tests;
 
 public class GatewayEdgeTunnelTests
 {
+    // A loopback endpoint: a mutant that bypasses the test connector must not dial a real host.
     private static GatewayMetadata Config(string directory, GatewayAuthMode mode = GatewayAuthMode.CloudflareJwt) => new()
     {
         Name = "edge",
-        Endpoint = new Uri("https://gw.example.com"),
+        Endpoint = new Uri("https://127.0.0.1:9"),
         Directory = directory,
         AuthMode = mode,
     };
@@ -68,7 +69,7 @@ public class GatewayEdgeTunnelTests
         }
 
         await Assert.That(seen.Count).IsGreaterThan(0);
-        await Assert.That(seen[0].Url).IsEqualTo(new Uri("wss://gw.example.com/_ws_tunnel"));
+        await Assert.That(seen[0].Url).IsEqualTo(new Uri("wss://127.0.0.1:9/_ws_tunnel"));
         await Assert.That(seen[0].Headers["cf-access-jwt-assertion"]).IsEqualTo("edge.jwt-1");
         await Assert.That(seen[0].Headers["cookie"]).IsEqualTo("CF_Authorization=edge.jwt-1");
     }
@@ -142,7 +143,7 @@ public class GatewayEdgeTunnelTests
     public async Task Connect_by_name_uses_the_tunnel_for_a_registered_cloudflare_gateway()
     {
         using var root = new TempDirectory();
-        var gatewayDir = GatewayLocatorTests.Register(root, "user", "edge", """{"gateway_endpoint":"https://gw.example.com","auth_mode":"cloudflare_jwt"}""");
+        var gatewayDir = GatewayLocatorTests.Register(root, "user", "edge", """{"gateway_endpoint":"https://127.0.0.1:9","auth_mode":"cloudflare_jwt"}""");
         await File.WriteAllTextAsync(Path.Combine(gatewayDir, "edge_token"), "tok");
         var (connector, seen) = FailingConnector();
         var locator = new GatewayLocator(new GatewayLocatorOptions { UserConfigDirectory = root.Combine("user"), SystemConfigDirectory = root.Combine("sys") });
