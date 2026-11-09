@@ -26,17 +26,38 @@ public interface ISandboxClient
     /// <summary>Stops a running sandbox.</summary>
     ValueTask<Sandbox> StopAsync(string name, CancellationToken cancellationToken = default);
 
-    /// <summary>Starts a stopped sandbox.</summary>
+    /// <summary>Starts a stopped sandbox. Starting a suspended sandbox discards its retained memory state; see <see cref="ResumeAsync"/>.</summary>
     ValueTask<Sandbox> StartAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Suspends a ready sandbox: it is frozen with its memory retained, moving through
+    /// <see cref="SandboxPhase.Suspending"/> to <see cref="SandboxPhase.Suspended"/> (see <see cref="WaitSuspendedAsync"/>).
+    /// Repeating the call while suspending or suspended is safe. Fails with <see cref="OpenShellErrorKind.Conflict"/>
+    /// (<c>FAILED_PRECONDITION</c>) in any other phase, or when the compute driver does not support suspension.
+    /// </summary>
+    ValueTask<Sandbox> SuspendAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resumes a suspended sandbox from its retained memory state. The sandbox returns as
+    /// <see cref="SandboxPhase.Starting"/> and becomes ready with a new runtime generation (see <see cref="WaitReadyAsync"/>).
+    /// Fails with <see cref="OpenShellErrorKind.Conflict"/> (<c>FAILED_PRECONDITION</c>) unless the sandbox is suspended.
+    /// </summary>
+    ValueTask<Sandbox> ResumeAsync(string name, ResumeSandboxOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a sandbox. Inspect <see cref="DeletionResult.Outcome"/>; <c>Accepted</c> means cleanup is pending.</summary>
     ValueTask<DeletionResult> DeleteAsync(string name, DeleteOptions? options = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Polls until the sandbox is ready (or completed).</summary>
+    /// <summary>Polls until the sandbox is ready (or completed). Fails fast when the sandbox is suspending or suspended.</summary>
     ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Polls until the sandbox is stopped.</summary>
+    /// <summary>Polls until the sandbox is stopped. Fails fast when the sandbox is suspending or suspended.</summary>
     ValueTask<Sandbox> WaitStoppedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Polls until the sandbox is suspended. Fails when it reaches a phase other than
+    /// <see cref="SandboxPhase.Suspending"/> or <see cref="SandboxPhase.Suspended"/>.
+    /// </summary>
+    ValueTask<Sandbox> WaitSuspendedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Polls until the sandbox name is gone, or resolves to a different id when <see cref="WaitOptions.ExpectedSandboxId"/> is set.</summary>
     ValueTask WaitDeletedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default);
@@ -123,22 +144,33 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
         return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.Grpc.DeleteSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
     }
 
-    public ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
-        PollAsync(name, options, static (sb, n) => sb.Phase switch
+    public async ValueTask<Sandbox> SuspendAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var request = new Wire.SuspendSandboxRequest { WorkspaceScope = ClientCore.Scope(workspace), Name = name };
+        return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.Grpc.SuspendSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
+    }
+
+    public async ValueTask<Sandbox> ResumeAsync(string name, ResumeSandboxOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        var request = new Wire.ResumeSandboxRequest
         {
-            SandboxPhase.Ready or SandboxPhase.Completed => WaitStep.Done,
-            SandboxPhase.Stopped => WaitStep.Fail($"sandbox '{n}' stopped before becoming ready"),
-            SandboxPhase.Error => WaitStep.Fail($"sandbox '{n}' entered error phase"),
-            _ => WaitStep.Continue,
-        }, cancellationToken);
+            WorkspaceScope = ClientCore.Scope(workspace),
+            Name = name,
+            RestartIfRestoreFails = options?.RestartIfRestoreFails ?? false,
+        };
+        return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.Grpc.ResumeSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
+    }
+
+    public ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
+        PollAsync(name, options, SandboxWaits.Ready, cancellationToken);
 
     public ValueTask<Sandbox> WaitStoppedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
-        PollAsync(name, options, static (sb, n) => sb.Phase switch
-        {
-            SandboxPhase.Stopped => WaitStep.Done,
-            SandboxPhase.Error => WaitStep.Fail($"sandbox '{n}' entered error phase"),
-            _ => WaitStep.Continue,
-        }, cancellationToken);
+        PollAsync(name, options, SandboxWaits.Stopped, cancellationToken);
+
+    public ValueTask<Sandbox> WaitSuspendedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
+        PollAsync(name, options, SandboxWaits.SuspendedStep, cancellationToken);
 
     public async ValueTask WaitDeletedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -193,7 +225,7 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
         return SandboxMapping.ToDomain(await core.UnaryAsync(o => core.Grpc.CreateSandboxAsync(request, o), cancellationToken).ConfigureAwait(false));
     }
 
-    private async ValueTask<Sandbox> PollAsync(string name, WaitOptions? options, Func<Sandbox, string, WaitStep> step, CancellationToken cancellationToken)
+    private async ValueTask<Sandbox> PollAsync(string name, WaitOptions? options, Func<Sandbox, string, string?> step, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         options ??= new WaitOptions();
@@ -212,27 +244,19 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
                 throw Deadline.Expired(timeoutMessage);
             }
 
+            // See SandboxWaits: null is done, empty keeps polling, anything else is a terminal failure.
             var outcome = step(sandbox, name);
-            if (outcome.IsDone)
+            if (outcome is null)
             {
                 return sandbox;
             }
 
-            if (outcome.Failure is { } failure)
+            if (outcome.Length > 0)
             {
-                throw new OpenShellException(OpenShellErrorKind.Conflict, failure);
+                throw new OpenShellException(OpenShellErrorKind.Conflict, outcome);
             }
 
             delay = await deadline.SleepAsync(delay, options.MaxPollInterval, timeoutMessage).ConfigureAwait(false);
         }
-    }
-
-    private readonly record struct WaitStep(bool IsDone, string? Failure)
-    {
-        public static WaitStep Done => new(true, null);
-
-        public static WaitStep Continue => new(false, null);
-
-        public static WaitStep Fail(string message) => new(false, message);
     }
 }
