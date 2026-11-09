@@ -25,6 +25,9 @@ internal static class GatewayFixture
 
     public static string Image => Environment.GetEnvironmentVariable("OPENSHELL_DOTNET_SDK_TEST_IMAGE") is { Length: > 0 } image ? image : DefaultImage;
 
+    /// <summary>The workspace the tests use: <c>OPENSHELL_WORKSPACE</c>, or <c>default</c>.</summary>
+    public static string Workspace => Environment.GetEnvironmentVariable("OPENSHELL_WORKSPACE") is { Length: > 0 } ws ? ws : "default";
+
     /// <summary>Creates a client, or skips the current test when no gateway is configured.</summary>
     public static OpenShellClient Connect()
     {
@@ -40,7 +43,7 @@ internal static class GatewayFixture
             Address = new Uri(address),
             Auth = string.IsNullOrEmpty(token) ? Auth.None : Auth.StaticToken(token),
             Tls = BuildTls(),
-            DefaultWorkspace = Environment.GetEnvironmentVariable("OPENSHELL_WORKSPACE") is { Length: > 0 } ws ? ws : "default",
+            DefaultWorkspace = Workspace,
         });
     }
 

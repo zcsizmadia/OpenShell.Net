@@ -46,12 +46,16 @@ internal sealed class TestSandbox : IAsyncDisposable
     }
 
     /// <summary>Creates a sandbox from <see cref="GatewayFixture.Image"/> and waits until it is ready.</summary>
-    public static async Task<TestSandbox> CreateAsync(OpenShellClient client, string prefix, CancellationToken cancellationToken)
+    public static Task<TestSandbox> CreateAsync(OpenShellClient client, string prefix, CancellationToken cancellationToken) =>
+        CreateAsync(client, prefix, new SandboxSpec { Image = GatewayFixture.Image }, cancellationToken);
+
+    /// <summary>Creates a sandbox from <paramref name="spec"/> and waits until it is ready.</summary>
+    public static async Task<TestSandbox> CreateAsync(OpenShellClient client, string prefix, SandboxSpec spec, CancellationToken cancellationToken)
     {
         var name = GatewayFixture.UniqueName(prefix);
         var created = await client.Sandboxes.CreateAsync(
             name,
-            new SandboxSpec { Image = GatewayFixture.Image },
+            spec,
             new CreateSandboxOptions { Labels = new Dictionary<string, string> { ["sdk"] = "dotnet" } },
             cancellationToken);
         var sandbox = new TestSandbox(client, created);
