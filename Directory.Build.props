@@ -5,11 +5,15 @@
   -->
   <PropertyGroup Label="Target frameworks">
     <!--
-      The only place that lists target frameworks. Add net11.0 or drop net8.0 here and every project follows.
-      Also update: the dotnet-version list in .github/workflows/ci.yml and release.yml, and the SDK pin in
-      global.json.
+      The only place that lists target frameworks; every project follows.
+      OpenShellSdkTargetFrameworks: the builds shipped in the packages. Add a newer framework only when the code needs
+      its APIs; apps on newer runtimes use the newest build listed here.
+      OpenShellTestTargetFrameworks: the runtimes the tests run on, including newer ones without a dedicated build.
+      Also update: the dotnet-version list in .github/workflows/ci.yml, release.yml and upstream-sync.yml, and the SDK
+      pin in global.json.
     -->
-    <OpenShellSdkTargetFrameworks>net8.0;net10.0;net11.0</OpenShellSdkTargetFrameworks>
+    <OpenShellSdkTargetFrameworks>net8.0;net10.0</OpenShellSdkTargetFrameworks>
+    <OpenShellTestTargetFrameworks>$(OpenShellSdkTargetFrameworks);net11.0</OpenShellTestTargetFrameworks>
   </PropertyGroup>
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

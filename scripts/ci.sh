@@ -33,10 +33,11 @@ elif [[ -n "${VERSION_SUFFIX:-}" ]]; then
   version_args=("-p:VersionSuffix=$VERSION_SUFFIX")
 fi
 
-# The framework list lives in Directory.Build.props (OpenShellSdkTargetFrameworks).
+# The test framework list lives in Directory.Build.props (OpenShellTestTargetFrameworks); it covers every
+# shipped framework plus newer runtimes. Coverage runs on the newest one.
 target_frameworks() {
   local tfms
-  tfms="$(dotnet msbuild src/OpenShell.Sdk -getProperty:OpenShellSdkTargetFrameworks -nologo | tr -d '\r')"
+  tfms="$(dotnet msbuild tests/OpenShell.Sdk.Tests -getProperty:OpenShellTestTargetFrameworks -nologo | tr -d '\r')"
   IFS=';' read -r -a TFMS <<< "$tfms"
   LATEST="${TFMS[${#TFMS[@]}-1]}"
 }

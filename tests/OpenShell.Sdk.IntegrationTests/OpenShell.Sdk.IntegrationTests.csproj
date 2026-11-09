@@ -4,7 +4,7 @@
     SPDX-License-Identifier: Apache-2.0
   -->
   <PropertyGroup>
-    <TargetFrameworks>$(OpenShellSdkTargetFrameworks)</TargetFrameworks>
+    <TargetFrameworks>$(OpenShellTestTargetFrameworks)</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
