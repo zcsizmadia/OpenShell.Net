@@ -72,6 +72,7 @@ public class GatewayLocatorTests
         var ex = await Assert.That(() => Locator(root).Load("gw")).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).Contains("unsupported auth_mode");
     }
 
     [Test]
@@ -98,6 +99,7 @@ public class GatewayLocatorTests
         var ex = await Assert.That(() => Locator(root).Load("ghost")).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
+        await Assert.That(ex.Message).IsEqualTo("gateway 'ghost' not found");
     }
 
     [Test]
@@ -111,45 +113,99 @@ public class GatewayLocatorTests
         Register(root, "user", "scheme", """{"gateway_endpoint":"ftp://gw.example.com"}""");
         var locator = Locator(root);
 
-        foreach (var name in new[] { "badjson", "noendpoint", "nullbody", "relative", "scheme" })
+        foreach (var (name, reason) in new[]
+        {
+            ("badjson", "invalid JSON in metadata.json for gateway 'badjson'"),
+            ("noendpoint", "missing gateway_endpoint"),
+            ("nullbody", "missing gateway_endpoint"),
+            ("relative", "gateway_endpoint for gateway 'relative' must be an absolute http:// or https:// URL"),
+            ("scheme", "gateway_endpoint for gateway 'scheme' must be an absolute http:// or https:// URL"),
+        })
         {
             var ex = await Assert.That(() => locator.Load(name)).Throws<OpenShellException>();
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+            await Assert.That(ex.Message).Contains(reason);
         }
     }
 
     [Test]
-    [Arguments("")]
-    [Arguments("a/b")]
-    [Arguments("a\\b")]
-    [Arguments(".")]
-    [Arguments("..")]
-    [Arguments(".hidden")]
-    [Arguments("gateway.")]
-    [Arguments("foo..bar")]
-    [Arguments("with space")]
-    [Arguments("::1")]
-    [Arguments("nul\0")]
-    [Arguments("con")]
-    [Arguments("con.txt")]
-    [Arguments("PRN")]
-    [Arguments("Aux.local")]
-    [Arguments("NUL")]
-    [Arguments("COM0")]
-    [Arguments("COM1.example.com")]
-    [Arguments("lpt9")]
-    [Arguments("üñí")]
-    [Arguments("semi;colon")]
-    public async Task Gateway_names_cannot_escape_the_registry(string name)
+    public async Task Unreadable_metadata_and_active_gateway_files_are_reported()
+    {
+        using var root = new TempDirectory();
+        var metadata = Path.Combine(Register(root, "user", "gw", Metadata()), "metadata.json");
+        var active = Path.Combine(root.Make("user"), "active_gateway");
+        File.WriteAllText(active, "gw");
+        var locator = Locator(root);
+
+        // FileShare.None is enforced on Windows and, between .NET processes, with advisory locks on Unix.
+        using (new FileStream(metadata, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var ex = await Assert.That(() => locator.Load("gw")).Throws<OpenShellException>();
+            await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+            await Assert.That(ex.Message).IsEqualTo("cannot read metadata.json for gateway 'gw'");
+            await Assert.That(ex.InnerException).IsTypeOf<IOException>();
+        }
+
+        using (new FileStream(active, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var ex = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
+            await Assert.That(ex!.Message).Contains($"cannot read {active}");
+        }
+    }
+
+    [Test]
+    public async Task Empty_oidc_fields_read_as_absent()
+    {
+        using var root = new TempDirectory();
+        Register(root, "user", "gw", Metadata(extra: """
+            ,"oidc_issuer":"","oidc_client_id":"","oidc_audience":"","oidc_scopes":""
+            """));
+
+        var config = Locator(root).Load("gw");
+
+        await Assert.That(config.OidcIssuer).IsNull();
+        await Assert.That(config.OidcClientId).IsNull();
+        await Assert.That(config.OidcAudience).IsNull();
+        await Assert.That(config.OidcScopes).IsNull();
+    }
+
+    [Test]
+    [Arguments("", "must not be empty")]
+    [Arguments("a/b", "must not contain path separators")]
+    [Arguments("a\\b", "must not contain path separators")]
+    [Arguments("/abs", "must not contain path separators")]
+    [Arguments(".", "not a valid path component")]
+    [Arguments("..", "not a valid path component")]
+    [Arguments(".hidden", "invalid dot placement")]
+    [Arguments("gateway.", "invalid dot placement")]
+    [Arguments("foo..bar", "invalid dot placement")]
+    [Arguments("with space", "non-portable character")]
+    [Arguments("::1", "non-portable character")]
+    [Arguments("nul\0", "must not contain NUL")]
+    [Arguments("con", "reserved Windows device name")]
+    [Arguments("con.txt", "reserved Windows device name")]
+    [Arguments("PRN", "reserved Windows device name")]
+    [Arguments("Aux.local", "reserved Windows device name")]
+    [Arguments("NUL", "reserved Windows device name")]
+    [Arguments("COM0", "reserved Windows device name")]
+    [Arguments("COM1.example.com", "reserved Windows device name")]
+    [Arguments("lpt9", "reserved Windows device name")]
+    [Arguments("üñí", "non-portable character")]
+    [Arguments("semi;colon", "non-portable character")]
+    public async Task Gateway_names_cannot_escape_the_registry(string name, string reason)
     {
         using var root = new TempDirectory();
 
         var ex = await Assert.That(() => Locator(root).Load(name)).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
+        await Assert.That(ex.Message).Contains(reason);
     }
 
     [Test]
+    [Arguments("Az-Za_09")]
+    [Arguments("web1")]
+    [Arguments("gw2.example.com")]
     [Arguments("Prod-1_eu")]
     [Arguments("gw.example.com")]
     [Arguments("192.0.2.1")]
@@ -195,6 +251,9 @@ public class GatewayLocatorTests
         var missing = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
         await Assert.That(missing!.Kind).IsEqualTo(OpenShellErrorKind.NotFound);
 
+        // A missing file is not a problem worth reporting.
+        await Assert.That(missing.Message).IsEqualTo("no active gateway configured");
+
         var file = Path.Combine(root.Make("user"), "active_gateway");
         File.WriteAllText(file, "  \n");
         var empty = await Assert.That(locator.ResolveActiveName).Throws<OpenShellException>();
@@ -234,6 +293,33 @@ public class GatewayLocatorTests
     }
 
     [Test]
+    public async Task Problems_with_both_active_gateway_files_are_reported_together()
+    {
+        using var root = new TempDirectory();
+        var user = Path.Combine(root.Make("user"), "active_gateway");
+        var system = Path.Combine(root.Make("sys"), "active_gateway");
+        File.WriteAllText(user, "");
+        File.WriteAllText(system, "a/b");
+
+        var ex = await Assert.That(Locator(root).ResolveActiveName).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Message).IsEqualTo($"no active gateway configured: {user} is empty; {system} names an invalid gateway (gateway name must not contain path separators)");
+    }
+
+    [Test]
+    public async Task List_is_sorted_across_the_user_and_system_registrations()
+    {
+        using var root = new TempDirectory();
+        Register(root, "user", "zulu", Metadata());
+        Register(root, "user", "mike", Metadata());
+        Register(root, "sys", "alpha", Metadata());
+
+        var names = Locator(root).List().Select(i => i.Name);
+
+        await Assert.That(string.Join(",", names)).IsEqualTo("alpha,mike,zulu");
+    }
+
+    [Test]
     public async Task List_is_empty_when_nothing_is_registered()
     {
         using var root = new TempDirectory();
@@ -255,7 +341,27 @@ public class GatewayLocatorTests
     {
         var locator = new GatewayLocator(new GatewayLocatorOptions { GetEnvironmentVariable = n => n == "XDG_CONFIG_HOME" ? "relative/dir" : null });
 
-        await Assert.That(() => locator.UserConfigDirectory).Throws<OpenShellException>();
+        var ex = await Assert.That(() => locator.UserConfigDirectory).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).Contains("XDG_CONFIG_HOME must be an absolute path");
+    }
+
+    [Test]
+    public async Task User_directory_uses_the_platform_home_variable_when_there_is_no_appdata()
+    {
+        var userProfile = Path.Combine(Path.GetTempPath(), "fake-userprofile");
+        var home = Path.Combine(Path.GetTempPath(), "fake-home");
+        var locator = new GatewayLocator(new GatewayLocatorOptions
+        {
+            GetEnvironmentVariable = n => n switch
+            {
+                "USERPROFILE" => userProfile,
+                "HOME" => home,
+                _ => null,
+            },
+        });
+
+        var expected = Path.Combine(OperatingSystem.IsWindows() ? userProfile : home, ".config", "openshell");
+        await Assert.That(locator.UserConfigDirectory).IsEqualTo(expected);
     }
 
     [Test]
