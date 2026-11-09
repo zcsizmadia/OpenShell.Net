@@ -151,14 +151,31 @@ public class SandboxFeatureTests
         var stopped = await client.Sandboxes.WaitStoppedAsync(sandbox.Name, new WaitOptions { Timeout = TimeSpan.FromMinutes(3) }, cancellationToken);
         await Assert.That(stopped.Phase).IsEqualTo(SandboxPhase.Stopped);
 
-        // The gateway runs with enable_sandbox_updates; labels can change on every compute driver.
-        var updated = await client.Sandboxes.UpdateAsync(
-            sandbox.Name,
-            stopped.ResourceVersion,
-            new SandboxUpdate { Labels = new Dictionary<string, string> { ["sdk"] = "dotnet", ["stage"] = "updated" } },
-            cancellationToken: cancellationToken);
+        // The gateway runs with enable_sandbox_updates; labels can change on every compute driver. Right after the
+        // stop the gateway may still record status changes, and a compare-and-swap update then loses with Aborted
+        // ("concurrent modification"), so re-read the version and retry, as a real caller would.
+        Sandbox updated;
+        ulong usedVersion;
+        for (var attempt = 1; ; attempt++)
+        {
+            usedVersion = (await client.Sandboxes.GetAsync(sandbox.Name, cancellationToken)).ResourceVersion;
+            try
+            {
+                updated = await client.Sandboxes.UpdateAsync(
+                    sandbox.Name,
+                    usedVersion,
+                    new SandboxUpdate { Labels = new Dictionary<string, string> { ["sdk"] = "dotnet", ["stage"] = "updated" } },
+                    cancellationToken: cancellationToken);
+                break;
+            }
+            catch (OpenShellException e) when (e.IsConflict && attempt < 10)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            }
+        }
+
         await Assert.That(updated.Labels["stage"]).IsEqualTo("updated");
-        await Assert.That(updated.ResourceVersion).IsGreaterThan(stopped.ResourceVersion);
+        await Assert.That(updated.ResourceVersion).IsGreaterThan(usedVersion);
 
         var stale = await Assert.That(async () => await client.Sandboxes.UpdateAsync(
             sandbox.Name, stopped.ResourceVersion, new SandboxUpdate { Labels = new Dictionary<string, string> { ["stage"] = "stale" } }, cancellationToken: cancellationToken))
