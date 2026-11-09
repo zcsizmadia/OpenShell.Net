@@ -48,10 +48,10 @@ jobs:
             11.0.x
 
       # Format, build, unit tests on every framework, coverage summary, and a pack dry run that
-      # stamps a CI prerelease version (also validating the version format and package metadata).
+      # stamps a CI prerelease of the upstream version, such as 0.1.7-ci.42.
       - name: Check
         env:
-          VERSION: 0.0.0-ci.${{ github.run_number }}
+          VERSION_SUFFIX: ci.${{ github.run_number }}
         run: scripts/ci.sh all
 
       - name: Upload packages

@@ -11,6 +11,18 @@ SPDX-License-Identifier: Apache-2.0
 
 The generated protobuf bindings come from the `proto/` files of the OpenShell release recorded in [`UPSTREAM_VERSION`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/UPSTREAM_VERSION). Use a gateway from that release or a compatible one: curated methods stay compatible while the underlying RPC contracts do. [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) tracks which gateway features the SDK covers.
 
+## Versions
+
+The package version is the NVIDIA OpenShell release the SDK is built from, with a fourth number for SDK-only releases in between:
+
+| Package version | Built from OpenShell |
+| --- | --- |
+| `0.1.7` | `v0.1.7` |
+| `0.1.7.1`, `0.1.7.2`, ... | `v0.1.7`, with SDK fixes and additions |
+| `0.1.8` | `v0.1.8` |
+
+So `OpenShell.Net 0.1.7.x` pairs with an OpenShell 0.1.7 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the release notes say so. The assembly metadata `OpenShellUpstreamRelease` records the release at run time.
+
 ## Install
 
 The packages are published to [nuget.org](https://www.nuget.org/packages/OpenShell.Net):
