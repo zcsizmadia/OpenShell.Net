@@ -93,6 +93,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 |---|---|---|
 | Resolve the on-disk gateway config and active gateway | G P | ✅ |
 | List gateways and load metadata | G | ✅ |
+| CLI discovery rules from v0.1.7: `OPENSHELL_SYSTEM_GATEWAY_DIR` system root, FQDN and IPv4 gateway names, Windows device names rejected on every platform | G | ✅ |
 | mTLS bundle and token loading | G P | ✅ |
 | `GatewayClient.Connect` convenience | P | ✅ |
 

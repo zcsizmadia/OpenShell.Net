@@ -11,7 +11,10 @@ public sealed record GatewayLocatorOptions
     /// <summary>Replaces the per-user <c>openshell</c> configuration directory.</summary>
     public string? UserConfigDirectory { get; init; }
 
-    /// <summary>Replaces the system-wide configuration directory (<c>/etc/openshell</c>). Null disables it on Windows.</summary>
+    /// <summary>
+    /// Replaces the system-wide configuration directory. Takes precedence over <c>$OPENSHELL_SYSTEM_GATEWAY_DIR</c>
+    /// and the default <c>/etc/openshell</c> (none on Windows).
+    /// </summary>
     public string? SystemConfigDirectory { get; init; }
 
     /// <summary>Environment lookup; defaults to <see cref="Environment.GetEnvironmentVariable(string)"/>.</summary>
@@ -26,6 +29,9 @@ public sealed class GatewayLocator
     private const string GatewaySubdir = "gateways";
     private const string ActiveGatewayFile = "active_gateway";
     private const string ActiveGatewayVariable = "OPENSHELL_GATEWAY";
+
+    // Kept in sync with the OpenShell CLI, so the SDK sees the same gateway set.
+    private const string SystemGatewayDirVariable = "OPENSHELL_SYSTEM_GATEWAY_DIR";
 
     private readonly GatewayLocatorOptions _options;
     private readonly Func<string, string?> _env;
@@ -71,11 +77,17 @@ public sealed class GatewayLocator
         }
     }
 
-    /// <summary>The system-wide configuration directory, or null when none applies.</summary>
+    /// <summary>
+    /// The system-wide configuration directory, or null when none applies: <see cref="GatewayLocatorOptions.SystemConfigDirectory"/>,
+    /// else <c>$OPENSHELL_SYSTEM_GATEWAY_DIR</c> when it is an absolute path (empty or relative values are ignored, as the
+    /// CLI does), else <c>/etc/openshell</c> (none on Windows).
+    /// </summary>
     public string? SystemConfigDirectory =>
         _options.SystemConfigDirectory is { Length: > 0 } overridden
             ? overridden
-            : OperatingSystem.IsWindows() ? null : "/etc/openshell";
+            : _env(SystemGatewayDirVariable) is { Length: > 0 } fromEnv && Path.IsPathFullyQualified(fromEnv)
+                ? fromEnv
+                : OperatingSystem.IsWindows() ? null : "/etc/openshell";
 
     /// <summary>Loads a gateway by name; null selects the active gateway.</summary>
     public GatewayMetadata Load(string? name = null)
@@ -141,7 +153,13 @@ public sealed class GatewayLocator
         return name;
     }
 
-    /// <summary>Validates a gateway name: ASCII letters, digits, <c>-</c> and <c>_</c> only.</summary>
+    /// <summary>
+    /// Validates a gateway name as a portable, single path component, as the OpenShell CLI does: ASCII letters, digits,
+    /// <c>-</c>, <c>_</c> and <c>.</c>, so host-derived FQDN and IPv4 names such as <c>gw.example.com</c> work. Rejects
+    /// <c>.</c> and <c>..</c>, a leading or trailing dot, <c>..</c> anywhere, and Windows device names
+    /// (<c>CON</c>, <c>PRN</c>, <c>AUX</c>, <c>NUL</c>, <c>COM0</c>-<c>COM9</c>, <c>LPT0</c>-<c>LPT9</c>, also before a
+    /// dot, in any case) on every platform.
+    /// </summary>
     public static void ValidateName(string name)
     {
         if (string.IsNullOrEmpty(name))
@@ -149,22 +167,42 @@ public sealed class GatewayLocator
             throw Invalid("gateway name must not be empty");
         }
 
+        if (name is "." or "..")
+        {
+            throw Invalid("gateway name is not a valid path component");
+        }
+
+        if (name.AsSpan().IndexOfAny('/', '\\') >= 0)
+        {
+            throw Invalid("gateway name must not contain path separators");
+        }
+
+        if (name.Contains('\0', StringComparison.Ordinal))
+        {
+            throw Invalid("gateway name must not contain NUL");
+        }
+
+        if (name.StartsWith('.') || name.EndsWith('.') || name.Contains("..", StringComparison.Ordinal))
+        {
+            throw Invalid("gateway name has an invalid dot placement");
+        }
+
+        // ASCII only: excludes Windows reserved characters (including ':' in raw IPv6 addresses), spaces, and controls.
         foreach (var c in name)
         {
-            if (c is '/' or '\\')
+            if (!(c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_' or '.'))
             {
-                throw Invalid("gateway name must not contain path separators");
+                throw Invalid("gateway name contains a non-portable character");
             }
+        }
 
-            if (c == '.')
-            {
-                throw Invalid("gateway name must not contain dots");
-            }
-
-            if (!(c is >= 'a' and <= 'z' or >= 'A' and <= 'Z' or >= '0' and <= '9' or '-' or '_'))
-            {
-                throw Invalid("gateway name contains an invalid character");
-            }
+        // Windows treats device names as reserved even with an extension (CON.txt, COM1.example.com).
+        var dot = name.IndexOf('.', StringComparison.Ordinal);
+        var stem = (dot < 0 ? name : name[..dot]).ToUpperInvariant();
+        if (stem is "CON" or "PRN" or "AUX" or "NUL"
+            || (stem.Length == 4 && (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) && char.IsAsciiDigit(stem[3])))
+        {
+            throw Invalid("gateway name is a reserved Windows device name");
         }
     }
 

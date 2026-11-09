@@ -159,6 +159,8 @@ using OpenShell.Gateway;
 using var client = GatewayClient.Connect();
 ```
 
+Registrations are read from the user configuration directory (`$XDG_CONFIG_HOME/openshell`, or the OS default) and then the system directory, `/etc/openshell` on Linux and macOS, or the absolute path in `OPENSHELL_SYSTEM_GATEWAY_DIR` on any OS. Gateway names follow the CLI rules: ASCII letters, digits, `-`, `_`, and `.`, so host-derived names such as `gw.example.com` and `192.0.2.1` work, while `.` and `..` components and Windows device names such as `CON` or `COM1.example.com` are rejected on every platform.
+
 ### Token transport safety
 
 The SDK refuses to send credentials over plaintext `http://` to a non-loopback host and throws an `OpenShellException` with `OpenShellErrorKind.InvalidConfig`. Set `AllowInsecureAuth` only when you accept that the credential crosses the network in clear text. Edge tokens must use cookie-safe JWT characters. A client certificate must include its private key.
