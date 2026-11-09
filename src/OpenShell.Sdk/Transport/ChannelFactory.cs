@@ -88,15 +88,21 @@ internal static class ChannelFactory
         }
         else if (tls.CaCertificates is { Count: > 0 } roots)
         {
-            ssl.RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
-                ValidateAgainst(roots, certificate, errors);
+            ssl.RemoteCertificateValidationCallback = (_, certificate, chain, errors) =>
+                ValidateAgainst(roots, certificate, chain, errors);
         }
 
         handler.SslOptions = ssl;
         return handler;
     }
 
-    internal static bool ValidateAgainst(X509Certificate2Collection roots, X509Certificate? certificate, SslPolicyErrors errors)
+    /// <summary>
+    /// Accepts the server certificate when it chains to one of the pinned <paramref name="roots"/>. The intermediates
+    /// the server sent (carried by <paramref name="presented"/>) help build the chain but are never trusted on their
+    /// own: the chain must still end in a pinned root.
+    /// </summary>
+    internal static bool ValidateAgainst(
+        X509Certificate2Collection roots, X509Certificate? certificate, X509Chain? presented, SslPolicyErrors errors)
     {
         if (certificate is null)
         {
@@ -118,6 +124,17 @@ internal static class ChannelFactory
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.AddRange(roots);
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        if (presented is not null)
+        {
+            // Path-building helpers only: the certificates the server sent and whatever the platform assembled from
+            // them. ExtraStore never confers trust; with CustomRootTrust only CustomTrustStore does.
+            chain.ChainPolicy.ExtraStore.AddRange(presented.ChainPolicy.ExtraStore);
+            foreach (var element in presented.ChainElements)
+            {
+                chain.ChainPolicy.ExtraStore.Add(element.Certificate);
+            }
+        }
+
         using var leaf = new X509Certificate2(certificate);
         return chain.Build(leaf);
     }

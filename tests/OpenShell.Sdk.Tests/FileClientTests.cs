@@ -241,10 +241,33 @@ public class FileUploadTests
         var invoker = Tar.UploadTarget((_, _) => { });
         invoker.DuplexFailWritesAfter = 1;
         using var client = ClientTests.NewClient(invoker);
+        ((FileClient)client.Files).RemoteExitGrace = TimeSpan.Zero; // The remote stays up: no exit is coming.
 
         var ex = await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream(new byte[100]), "/x")).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Unavailable);
+    }
+
+    [Test]
+    public async Task A_remote_that_exits_before_reading_stdin_reports_its_exit_code_and_stderr()
+    {
+        // tar fails before reading its input: the gateway ends the call, so sending stdin fails, but the exit
+        // code and stderr still arrive on the output stream.
+        var invoker = new FakeCallInvoker().Duplex<Wire.ExecSandboxInput, Wire.ExecSandboxEvent>("ExecSandboxInteractive", async ch =>
+        {
+            await ch.ReadAsync(); // The start frame.
+            ch.Send(Interactive.Err("mkdir: cannot create directory '/x': Permission denied"));
+            ch.Send(Interactive.Exit(1));
+        });
+        invoker.DuplexFailWritesAfter = 1; // Only the start frame gets through.
+        using var client = ClientTests.NewClient(invoker);
+
+        var ex = await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream(new byte[100]), "/x/f")).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Internal);
+        await Assert.That(ex.Message).Contains("code 1");
+        await Assert.That(ex.Message).Contains("Permission denied");
+        await Assert.That(ex.InnerException).IsTypeOf<OpenShellException>();
     }
 
     [Test]

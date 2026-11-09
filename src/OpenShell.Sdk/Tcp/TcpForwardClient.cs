@@ -109,6 +109,18 @@ internal sealed class ForwardListener : IForwardListener
 
     public IPEndPoint LocalEndPoint { get; }
 
+    /// <summary>The connections being bridged right now (for tests).</summary>
+    internal Task[] ActiveBridges
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _bridges];
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -209,9 +221,10 @@ internal sealed class ForwardListener : IForwardListener
                     await down.ConfigureAwait(false);
                 }
             }
-            catch (Exception e) when (e is OpenShellException or IOException or OperationCanceledException or ObjectDisposedException or SocketException)
+            catch (Exception e) when (e is OpenShellException or IOException or OperationCanceledException or ObjectDisposedException or SocketException or InvalidOperationException)
             {
-                // The connection is dropped; the listener keeps serving new ones.
+                // The connection is dropped; the listener keeps serving new ones. InvalidOperationException is what
+                // gRPC throws for a write after the gateway already completed the call, which is a normal remote close.
             }
             finally
             {

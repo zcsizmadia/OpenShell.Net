@@ -257,6 +257,56 @@ public class ForwardStreamTests
     }
 
     [Test]
+    public async Task Dispose_returns_while_a_write_is_blocked_on_flow_control()
+    {
+        var invoker = Relay.EchoInvoker();
+        using var client = ClientTests.NewClient(invoker);
+        var stream = await client.Tcp.ForwardAsync("sb", 1);
+        var channel = Relay.Channel(invoker);
+        channel.WriteGate = new TaskCompletionSource().Task; // The remote never grants more window.
+
+        var write = stream.WriteAsync(new byte[] { 1, 2, 3 }).AsTask();
+        await channel.WriteBlocked.Task.WithinBudget();
+
+        await stream.DisposeAsync().AsTask().WithinBudget();
+
+        await Assert.That(async () => await write.WithinBudget()).Throws<ObjectDisposedException>();
+        await Assert.That(channel.ClientDisposed).IsTrue();
+        await Assert.That(channel.CompleteCount).IsEqualTo(0); // Cancelled, not half-closed behind the blocked write.
+    }
+
+    [Test]
+    public async Task Dispose_half_closes_the_stream_when_no_write_is_in_flight()
+    {
+        var invoker = Relay.EchoInvoker();
+        using var client = ClientTests.NewClient(invoker);
+        var stream = await client.Tcp.ForwardAsync("sb", 1);
+        await stream.WriteAsync(new byte[] { 1 });
+
+        await stream.DisposeAsync();
+
+        await Assert.That(Relay.Channel(invoker).CompleteCount).IsEqualTo(1);
+        await Assert.That(Relay.Channel(invoker).ClientDisposed).IsTrue();
+    }
+
+    [Test]
+    public async Task A_caller_cancelling_a_blocked_write_keeps_its_own_cancellation()
+    {
+        var invoker = Relay.EchoInvoker();
+        using var client = ClientTests.NewClient(invoker);
+        await using var stream = await client.Tcp.ForwardAsync("sb", 1);
+        var channel = Relay.Channel(invoker);
+        channel.WriteGate = new TaskCompletionSource().Task;
+        using var cts = new CancellationTokenSource();
+
+        var write = stream.WriteAsync(new byte[] { 1 }, cts.Token).AsTask();
+        await channel.WriteBlocked.Task.WithinBudget();
+        await cts.CancelAsync();
+
+        await Assert.That(async () => await write.WithinBudget()).Throws<OperationCanceledException>();
+    }
+
+    [Test]
     public async Task Unsupported_synchronous_members_throw()
     {
         var invoker = Relay.EchoInvoker();

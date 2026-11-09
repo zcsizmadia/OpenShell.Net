@@ -20,29 +20,54 @@ public interface IOpenShellClientFactory
 internal sealed class OpenShellClientFactory(IOptionsMonitor<OpenShellOptions> options, ILoggerFactory? loggerFactory = null)
     : IOpenShellClientFactory, IDisposable
 {
-    private readonly ConcurrentDictionary<string, Lazy<OpenShellClient>> _clients = new(StringComparer.Ordinal);
-    private int _disposed;
+    private readonly ConcurrentDictionary<string, OpenShellClient> _clients = new(StringComparer.Ordinal);
+    private readonly object _sync = new();
+    private bool _disposed;
 
     public IOpenShellClient Create(string? name = null)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed), this);
         var key = name ?? Options.DefaultName;
-        return _clients.GetOrAdd(key, static (k, state) => new Lazy<OpenShellClient>(() => state.Build(k)), this).Value;
+        if (_clients.TryGetValue(key, out var existing))
+        {
+            return existing;
+        }
+
+        // One build per name at a time, and only a successful build is cached: a failure (for example a certificate
+        // file that is not there yet) is thrown to this caller and the next call tries again.
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_clients.TryGetValue(key, out existing))
+            {
+                return existing;
+            }
+
+            var client = Build(key);
+            _clients[key] = client;
+            return client;
+        }
     }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        OpenShellClient[] clients;
+        lock (_sync)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            Volatile.Write(ref _disposed, true);
+            clients = [.. _clients.Values];
+            _clients.Clear();
         }
 
-        foreach (var client in _clients.Values.Where(l => l.IsValueCreated))
+        foreach (var client in clients)
         {
-            client.Value.Dispose();
+            client.Dispose();
         }
-
-        _clients.Clear();
     }
 
     private OpenShellClient Build(string name) =>

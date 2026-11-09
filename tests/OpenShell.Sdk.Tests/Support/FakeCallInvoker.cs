@@ -30,6 +30,15 @@ internal sealed class DuplexChannel<TReq, TResp> : IDisposable
     /// <summary>When set, writes beyond this many successful frames fail with <c>Unavailable</c>.</summary>
     public int? FailWritesAfter { get; set; }
 
+    /// <summary>
+    /// When set, writes block until this task completes, as a write held up by HTTP/2 flow control would. A blocked
+    /// write ends early only when its own cancellation token fires or the client disposes the call.
+    /// </summary>
+    public Task? WriteGate { get; set; }
+
+    /// <summary>Completes once a write is blocked on <see cref="WriteGate"/>.</summary>
+    public TaskCompletionSource WriteBlocked { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>When true, completing the request stream fails with <c>Unavailable</c>.</summary>
     public bool FailComplete { get; set; }
 
@@ -101,12 +110,35 @@ internal sealed class DuplexChannel<TReq, TResp> : IDisposable
 
         public Task WriteAsync(TReq message, CancellationToken cancellationToken)
         {
-            return cancellationToken.IsCancellationRequested
-                ? Task.FromCanceled(cancellationToken)
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled(cancellationToken);
+            }
+
+            return owner.WriteGate is { IsCompleted: false } gate
+                ? BlockedWriteAsync(gate, message, cancellationToken)
                 : WriteAsync(message);
         }
 
-        public Task WriteAsync(TReq message)
+        private async Task BlockedWriteAsync(Task gate, TReq message, CancellationToken cancellationToken)
+        {
+            owner.WriteBlocked.TrySetResult();
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, owner._disposed.Token);
+            try
+            {
+                await gate.WaitAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new RpcException(new Status(StatusCode.Cancelled, "call disposed"));
+            }
+
+            await Accept(message).ConfigureAwait(false);
+        }
+
+        public Task WriteAsync(TReq message) => Accept(message);
+
+        private Task Accept(TReq message)
         {
             lock (owner._received)
             {
