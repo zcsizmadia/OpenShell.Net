@@ -29,8 +29,14 @@ public sealed record FakeGatewayOptions
     /// </summary>
     public TimeSpan ProvisioningDelay { get; init; } = TimeSpan.Zero;
 
-    /// <summary>How long stop and start take to reach <c>Stopped</c> and <c>Ready</c>.</summary>
+    /// <summary>How long stop, start, suspend, and resume take to reach <c>Stopped</c>, <c>Ready</c>, and <c>Suspended</c>.</summary>
     public TimeSpan TransitionDelay { get; init; } = TimeSpan.Zero;
+
+    /// <summary>
+    /// Whether the fake compute driver supports suspend and resume. When <see langword="false"/>, both fail with
+    /// <see cref="OpenShellErrorKind.Conflict"/> (<c>FAILED_PRECONDITION</c>), as a gateway with such a driver does.
+    /// </summary>
+    public bool SupportsSuspendResume { get; init; } = true;
 
     /// <summary>
     /// How long a sandbox deletion takes. Zero deletes immediately and reports <see cref="DeletionOutcome.Completed"/>;

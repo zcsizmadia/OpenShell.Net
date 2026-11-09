@@ -55,6 +55,9 @@ internal sealed class SandboxEntry
 
     public List<string> Providers { get; } = [];
 
+    /// <summary>The current <c>Starting</c> phase comes from a resume, so repeating the resume is idempotent.</summary>
+    public bool Resuming { get; set; }
+
     public int? ExitCode { get; set; }
 
     public int RestartCount { get; set; }

@@ -233,6 +233,16 @@ public sealed record DeleteOptions
     public string? RequestId { get; init; }
 }
 
+/// <summary>Options for <see cref="ISandboxClient.ResumeAsync"/>.</summary>
+public sealed record ResumeSandboxOptions
+{
+    /// <summary>
+    /// When the isolation backend cannot restore the retained memory state, boot the workload cleanly instead of
+    /// failing the resume. The default fails, so the retained state is never discarded silently.
+    /// </summary>
+    public bool RestartIfRestoreFails { get; init; }
+}
+
 /// <summary>Options for the polling waits.</summary>
 public sealed record WaitOptions
 {

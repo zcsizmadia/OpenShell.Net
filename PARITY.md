@@ -16,7 +16,7 @@ Sources: G Go, R Rust, T TypeScript, P Python.
 
 | Measure | Result |
 |---|---|
-| User-facing RPCs in the `OpenShell` service | ⚠️ 65 of 67 called by the curated client; `SuspendSandbox` and `ResumeSandbox` (new in v0.1.7) are reachable only through `OpenShellClient.Raw` |
+| User-facing RPCs in the `OpenShell` service | ✅ 67 of 67 called by the curated client |
 | `SandboxUpdates` service (`UpdateSandbox`, new in v0.1.7; needs compute-driver support and explicit gateway activation) | ⚠️ raw only: `OpenShellClient.RawSandboxUpdates` |
 | Supervisor and sandbox-internal RPCs (`ConnectSupervisor`, `RelayStream`, `PeerRelay`, `Peer*`, `PushSandboxLogs`, `Report*`, `FinalizeMainProcessExit`, `GetSandboxProviderEnvironment`, `ExchangeProviderSubjectToken`, `IssueSandboxToken`, `RefreshSandboxToken`, `SubmitPolicyAnalysis`) | Excluded by design; no SDK implements them. Reachable through `OpenShellClient.Raw`. |
 | Extension services (`ComputeDriver`, `CredentialDriver`, `GatewayInterceptor`, `SupervisorMiddleware`) | Excluded: they are contracts to implement, not call |
@@ -32,7 +32,8 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Health | `CheckAsync`, `GetGatewayInfoAsync`, `GetCurrentUserAsync` | G R T P | ✅ |
 | Workspaces | create, get, list, delete, add/remove/list members, `InWorkspace(name)` scoped view | G R P | ✅ |
 | Sandboxes | create, create from template, get, list, list IDs, stop, start, delete (typed `DeletionResult`) | G R T P | ✅ |
-| Sandbox suspend, resume, and update | `SuspendSandbox`, `ResumeSandbox`, `SandboxUpdates.UpdateSandbox` (v0.1.7) | | ⬜ |
+| Sandbox suspend and resume | `SuspendAsync`, `ResumeAsync` (`RestartIfRestoreFails`), `WaitSuspendedAsync`; Ready and Stopped waits fail fast on a suspended sandbox (v0.1.7) | G P | ✅ |
+| Sandbox configuration update | `SandboxUpdates.UpdateSandbox` (v0.1.7) | | ⬜ raw only |
 | Sandbox waits | `WaitReadyAsync`, `WaitStoppedAsync`, `WaitDeletedAsync` with `ExpectedSandboxId` | G R T P | ✅ |
 | Sandbox watch and logs | `WatchAsync`, `WatchLogsAsync`, `GetLogsAsync`, cursor resume, reconnect with backoff | G R | ✅ |
 | Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ |

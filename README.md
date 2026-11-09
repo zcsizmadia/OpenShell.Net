@@ -77,6 +77,20 @@ if (deletion.Outcome == DeletionOutcome.Accepted)
 
 `DeleteAsync` returns a typed `DeletionResult`, not a boolean. `Accepted` means cleanup is still pending, `Unspecified` does not establish completion, and `IsComplete` is true only for `Completed` and `AlreadyAbsent`. A missing target is an error unless you pass `new DeleteOptions { AllowMissing = true }`.
 
+### Suspend and resume
+
+A ready sandbox can be suspended: it is frozen with its memory retained and resumed later from that state. The compute driver must support it; otherwise both calls fail with `OpenShellErrorKind.Conflict` (`FAILED_PRECONDITION`).
+
+```csharp
+await client.Sandboxes.SuspendAsync("sdk-example");        // Ready -> Suspending
+await client.Sandboxes.WaitSuspendedAsync("sdk-example");  // -> Suspended
+
+await client.Sandboxes.ResumeAsync("sdk-example");         // -> Starting, with the retained state
+await client.Sandboxes.WaitReadyAsync("sdk-example");      // -> Ready
+```
+
+Repeating a suspend while suspending or suspended, or a resume while it is starting, is safe. `ResumeSandboxOptions.RestartIfRestoreFails` boots the workload cleanly when the memory state cannot be restored, instead of failing. `StopAsync` and `StartAsync` also work on a suspended sandbox, but they discard the retained state. `WaitReadyAsync` and `WaitStoppedAsync` fail fast on a suspended sandbox instead of waiting for a phase it will not reach on its own.
+
 ## Connect and authenticate
 
 `Auth` builds the authentication providers:

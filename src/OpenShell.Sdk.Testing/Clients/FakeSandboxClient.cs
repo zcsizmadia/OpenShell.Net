@@ -51,12 +51,15 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
                 return gateway.Project(entry);
             }
 
-            if (entry.Phase is not (SandboxPhase.Ready or SandboxPhase.Starting or SandboxPhase.Provisioning or SandboxPhase.Completed))
+            // Stopping a suspending or suspended sandbox discards its retained memory state.
+            if (entry.Phase is not (SandboxPhase.Ready or SandboxPhase.Starting or SandboxPhase.Provisioning or SandboxPhase.Completed
+                or SandboxPhase.Suspending or SandboxPhase.Suspended))
             {
                 throw FakeGateway.Conflict($"sandbox '{name}' cannot be stopped in phase {entry.Phase}");
             }
 
             entry.Phase = SandboxPhase.Stopping;
+            entry.Resuming = false;
             gateway.BeginTransition(entry, SandboxPhase.Stopped, gateway.Options.TransitionDelay);
             gateway.Touch(entry);
             return gateway.Project(entry);
@@ -74,13 +77,74 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
                 return gateway.Project(entry);
             }
 
-            if (entry.Phase != SandboxPhase.Stopped)
+            // Starting a suspended sandbox boots it cleanly and discards its retained memory state.
+            if (entry.Phase is not (SandboxPhase.Stopped or SandboxPhase.Suspended))
             {
                 throw FakeGateway.Conflict($"sandbox '{name}' cannot be started in phase {entry.Phase}");
             }
 
             entry.Phase = SandboxPhase.Starting;
+            entry.Resuming = false;
             entry.RestartCount++;
+            gateway.BeginTransition(entry, SandboxPhase.Ready, gateway.Options.TransitionDelay);
+            gateway.Touch(entry);
+            return gateway.Project(entry);
+        }));
+    }
+
+    public ValueTask<Sandbox> SuspendAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return ValueTask.FromResult(gateway.Run("Sandboxes.Suspend", workspace, name, cancellationToken, () =>
+        {
+            var entry = gateway.FindSandbox(workspace, name);
+            if (!gateway.Options.SupportsSuspendResume)
+            {
+                throw FakeGateway.Conflict("compute driver does not support sandbox suspend");
+            }
+
+            if (entry.Phase is SandboxPhase.Suspending or SandboxPhase.Suspended)
+            {
+                return gateway.Project(entry);
+            }
+
+            if (entry.Phase != SandboxPhase.Ready)
+            {
+                throw FakeGateway.Conflict($"sandbox must be Ready to suspend (current phase: {entry.Phase})");
+            }
+
+            entry.Phase = SandboxPhase.Suspending;
+            entry.Resuming = false;
+            gateway.BeginTransition(entry, SandboxPhase.Suspended, gateway.Options.TransitionDelay);
+            gateway.Touch(entry);
+            return gateway.Project(entry);
+        }));
+    }
+
+    public ValueTask<Sandbox> ResumeAsync(string name, ResumeSandboxOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        return ValueTask.FromResult(gateway.Run("Sandboxes.Resume", workspace, name, cancellationToken, () =>
+        {
+            var entry = gateway.FindSandbox(workspace, name);
+            if (!gateway.Options.SupportsSuspendResume)
+            {
+                throw FakeGateway.Conflict("compute driver does not support sandbox resume");
+            }
+
+            if (entry.Phase == SandboxPhase.Starting && entry.Resuming)
+            {
+                return gateway.Project(entry);
+            }
+
+            if (entry.Phase != SandboxPhase.Suspended)
+            {
+                throw FakeGateway.Conflict($"sandbox must be Suspended to resume (current phase: {entry.Phase})");
+            }
+
+            // The fake always restores, so RestartIfRestoreFails has nothing to change.
+            entry.Phase = SandboxPhase.Starting;
+            entry.Resuming = true;
             gateway.BeginTransition(entry, SandboxPhase.Ready, gateway.Options.TransitionDelay);
             gateway.Touch(entry);
             return gateway.Project(entry);
@@ -120,10 +184,13 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
     }
 
     public ValueTask<Sandbox> WaitReadyAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
-        PollAsync(name, options, ReadyStep, cancellationToken);
+        PollAsync(name, options, SandboxWaits.Ready, cancellationToken);
 
     public ValueTask<Sandbox> WaitStoppedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
-        PollAsync(name, options, StoppedStep, cancellationToken);
+        PollAsync(name, options, SandboxWaits.Stopped, cancellationToken);
+
+    public ValueTask<Sandbox> WaitSuspendedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default) =>
+        PollAsync(name, options, SandboxWaits.SuspendedStep, cancellationToken);
 
     public async ValueTask WaitDeletedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -153,28 +220,6 @@ internal sealed class FakeSandboxClient(FakeGateway gateway, string workspace) :
 
             delay = await deadline.SleepAsync(delay, options.MaxPollInterval, timeoutMessage).ConfigureAwait(false);
         }
-    }
-
-    // A wait step returns null when the wait is over, an empty string to keep polling, or the failure message.
-    private static string? ReadyStep(Sandbox sandbox, string name)
-    {
-        return sandbox.Phase switch
-        {
-            SandboxPhase.Ready or SandboxPhase.Completed => null,
-            SandboxPhase.Stopped => $"sandbox '{name}' stopped before becoming ready",
-            SandboxPhase.Error => $"sandbox '{name}' entered error phase",
-            _ => "",
-        };
-    }
-
-    private static string? StoppedStep(Sandbox sandbox, string name)
-    {
-        return sandbox.Phase switch
-        {
-            SandboxPhase.Stopped => null,
-            SandboxPhase.Error => $"sandbox '{name}' entered error phase",
-            _ => "",
-        };
     }
 
     private IEnumerable<SandboxEntry> Matching(ListOptions options)
