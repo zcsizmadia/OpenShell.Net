@@ -66,6 +66,11 @@ internal sealed class ProviderProfileClient(ClientCore core, string? workspace) 
         ArgumentNullException.ThrowIfNull(items);
         var request = new Wire.ImportProviderProfilesRequest { WorkspaceScope = Scope, RequestId = options?.RequestId ?? "" };
         request.Profiles.AddRange(items.Select(ProfileMapping.ToWire));
+        if (RequireStablePlaceholders(request.Profiles))
+        {
+            _ = await LintCoreAsync(request.Profiles, cancellationToken).ConfigureAwait(false);
+        }
+
         var response = await core.UnaryAsync(o => core.Grpc.ImportProviderProfilesAsync(request, o), cancellationToken).ConfigureAwait(false);
         return new ImportProfilesResult(
             response.Diagnostics.Select(ProfileMapping.ToDomain).ToArray(),
@@ -85,6 +90,11 @@ internal sealed class ProviderProfileClient(ClientCore core, string? workspace) 
             Profile = ProfileMapping.ToWire(item),
             RequestId = options?.RequestId ?? "",
         };
+        if (RequireStablePlaceholders([request.Profile]))
+        {
+            _ = await LintCoreAsync([request.Profile], cancellationToken).ConfigureAwait(false);
+        }
+
         var response = await core.UnaryAsync(o => core.Grpc.UpdateProviderProfilesAsync(request, o), cancellationToken).ConfigureAwait(false);
         return new UpdateProfileResult(
             response.Diagnostics.Select(ProfileMapping.ToDomain).ToArray(),
@@ -95,10 +105,25 @@ internal sealed class ProviderProfileClient(ClientCore core, string? workspace) 
     public async ValueTask<LintProfilesResult> LintAsync(IReadOnlyList<ProfileImportItem> items, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(items);
+        var response = await LintCoreAsync([.. items.Select(ProfileMapping.ToWire)], cancellationToken).ConfigureAwait(false);
+        return new LintProfilesResult(response.Diagnostics.Select(ProfileMapping.ToDomain).ToArray(), response.Valid, response.SupportsStablePlaceholder);
+    }
+
+    private static bool RequireStablePlaceholders(IEnumerable<Wire.ProviderProfileImportItem> items) =>
+        items.Any(i => i.Profile?.Credentials.Any(c => c.StablePlaceholder) == true);
+
+    /// <summary>
+    /// Lints, and fails client-side when an item opts in to stable placeholders the gateway does not support. Older
+    /// gateways drop unknown credential fields silently, so this runs before an opt-in is persisted (as in the Go SDK).
+    /// </summary>
+    private async ValueTask<Wire.LintProviderProfilesResponse> LintCoreAsync(IReadOnlyList<Wire.ProviderProfileImportItem> items, CancellationToken cancellationToken)
+    {
         var request = new Wire.LintProviderProfilesRequest { WorkspaceScope = Scope };
-        request.Profiles.AddRange(items.Select(ProfileMapping.ToWire));
+        request.Profiles.AddRange(items);
         var response = await core.UnaryAsync(o => core.Grpc.LintProviderProfilesAsync(request, o), cancellationToken).ConfigureAwait(false);
-        return new LintProfilesResult(response.Diagnostics.Select(ProfileMapping.ToDomain).ToArray(), response.Valid);
+        return RequireStablePlaceholders(items) && !response.SupportsStablePlaceholder
+            ? throw new OpenShellException(OpenShellErrorKind.Unimplemented, "gateway does not support stable_placeholder; upgrade the gateway before enabling it")
+            : response;
     }
 
     public async ValueTask<DeletionResult> DeleteAsync(string id, DeleteOptions? options = null, CancellationToken cancellationToken = default)
@@ -179,6 +204,7 @@ internal static class ProfileMapping
         HeaderName = c.HeaderName,
         QueryParam = c.QueryParam,
         PathTemplate = c.PathTemplate,
+        StablePlaceholder = c.StablePlaceholder,
         Refresh = c.Refresh is null ? null : ToDomain(c.Refresh),
         TokenGrant = c.TokenGrant is null ? null : ToDomain(c.TokenGrant, c.TokenGrantOwners),
     };
@@ -194,6 +220,7 @@ internal static class ProfileMapping
             HeaderName = c.HeaderName,
             QueryParam = c.QueryParam,
             PathTemplate = c.PathTemplate,
+            StablePlaceholder = c.StablePlaceholder,
         };
         wire.EnvVars.AddRange(c.EnvVars);
         if (c.Refresh is { } r)

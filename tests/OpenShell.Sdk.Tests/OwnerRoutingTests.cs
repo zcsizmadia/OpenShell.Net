@@ -118,7 +118,7 @@ public class OwnerRoutingTests
 
         await Assert.That(result.StdoutText).IsEqualTo("ok");
         var calls = OptionsOf(invoker, "ExecSandbox");
-        await Assert.That(calls.Select(Replica)).IsEquivalentTo([Owner, null, Owner, null]);
+        await Assert.That(string.Join(",", calls.Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-,{Owner},-");
 
         // The owner is forgotten after an unrouted retry, so the second exec looked it up again.
         await Assert.That(invoker.CountOf("GetSandbox")).IsEqualTo(2);
@@ -134,7 +134,7 @@ public class OwnerRoutingTests
         var result = await client.Exec.RunAsync("sb", ["true"]);
 
         await Assert.That(result.StdoutText).IsEqualTo("ok");
-        await Assert.That(OptionsOf(invoker, "ExecSandbox").Select(Replica)).IsEquivalentTo([Owner, null]);
+        await Assert.That(string.Join(",", OptionsOf(invoker, "ExecSandbox").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
     }
 
     [Test]
@@ -214,7 +214,7 @@ public class OwnerRoutingTests
         await stream.WriteAsync("ping"u8.ToArray());
 
         await Assert.That(await Relay.ReadExactlyAsync(stream, 4)).IsEqualTo("ping");
-        await Assert.That(OptionsOf(invoker, "ForwardTcp").Select(Replica)).IsEquivalentTo([Owner, null]);
+        await Assert.That(string.Join(",", OptionsOf(invoker, "ForwardTcp").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
         await Assert.That(Relay.Channel(invoker, 0).Received[0].Init.Tcp.Port).IsEqualTo(8080u);
         await Assert.That(Relay.Channel(invoker, 1).Received[0].Init.Tcp.Port).IsEqualTo(8080u);
     }
@@ -264,7 +264,7 @@ public class OwnerRoutingTests
         await using var session = await client.Exec.InteractiveAsync("sb", ["bash", "-l"], 80, 24);
 
         await Assert.That(await session.WaitForExitAsync()).IsEqualTo(2);
-        await Assert.That(OptionsOf(invoker, "ExecSandboxInteractive").Select(Replica)).IsEquivalentTo([Owner, null]);
+        await Assert.That(string.Join(",", OptionsOf(invoker, "ExecSandboxInteractive").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
         await Assert.That(invoker.CountOf("GetSandbox")).IsEqualTo(1);
 
         // The unreachable owner was forgotten, so the next stream looks it up again.
@@ -307,7 +307,7 @@ public class OwnerRoutingTests
 
         await using (var tunnel = await client.Ssh.TunnelAsync("sb"))
         {
-            await Assert.That(OptionsOf(invoker, "ForwardTcp").Select(Replica)).IsEquivalentTo([Owner, null]);
+            await Assert.That(string.Join(",", OptionsOf(invoker, "ForwardTcp").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
             await Assert.That(Relay.Channel(invoker, 1).Received[0].Init.AuthorizationToken).IsEqualTo("tok");
         }
 
