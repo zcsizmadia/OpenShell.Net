@@ -5,6 +5,9 @@
 namespace OpenShell;
 
 /// <summary>An opaque handle for a credential stored by gateway credential storage. Never authored by callers.</summary>
+/// <param name="Driver">The credential driver or storage owner that owns the handle.</param>
+/// <param name="Handle">The opaque handle string.</param>
+/// <param name="Metadata">Non-secret metadata owned by the driver.</param>
 public sealed record CredentialHandle(string Driver, string Handle, IReadOnlyDictionary<string, string> Metadata);
 
 /// <summary>A provider: a named set of credentials and configuration for one provider type.</summary>
@@ -100,6 +103,8 @@ public sealed record ProviderCredentialsOptions
 }
 
 /// <summary>An exported runtime secret. Its <see cref="ToString"/> never reveals the value.</summary>
+/// <param name="Value">The secret value. Keep it out of logs.</param>
+/// <param name="ExpirationTime">When the value expires, when known.</param>
 public sealed record ProviderCredentialValue(string Value, DateTimeOffset? ExpirationTime = null)
 {
     /// <summary>Redacts the secret; explicit property access still exposes it.</summary>

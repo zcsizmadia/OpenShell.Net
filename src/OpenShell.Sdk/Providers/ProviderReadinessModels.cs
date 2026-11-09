@@ -4,6 +4,8 @@
 namespace OpenShell;
 
 /// <summary>A timestamp that keeps nanosecond precision, which <see cref="DateTimeOffset"/> cannot.</summary>
+/// <param name="Seconds">Seconds since the Unix epoch.</param>
+/// <param name="Nanos">Nanoseconds within the second.</param>
 public readonly record struct ExactTimestamp(long Seconds, int Nanos)
 {
     /// <summary>Converts to a <see cref="DateTimeOffset"/>, truncating to 100 ns ticks.</summary>
@@ -217,6 +219,10 @@ public sealed record ProviderReadinessObservation
 }
 
 /// <summary>Durable progress of the operation behind a receipt.</summary>
+/// <param name="OperationId">The operation id.</param>
+/// <param name="State">How far the operation has progressed.</param>
+/// <param name="Outcome">The result of applying the change.</param>
+/// <param name="SanitizedError">The error, without secrets, when the operation failed.</param>
 public sealed record ProviderOperation(
     string OperationId,
     ConfigUpdateOperationState State,
@@ -263,6 +269,8 @@ public enum ProviderWaitOutcome
 }
 
 /// <summary>Last safe status and the reason a provider wait returned.</summary>
+/// <param name="Status">The last status observed.</param>
+/// <param name="Outcome">Why the wait returned.</param>
 public sealed record ProviderWaitResult(ProviderReadinessStatus Status, ProviderWaitOutcome Outcome);
 
 /// <summary>The result of attaching a provider to a sandbox.</summary>

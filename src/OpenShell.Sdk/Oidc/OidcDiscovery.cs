@@ -8,6 +8,11 @@ using System.Text.Json;
 namespace OpenShell.Oidc;
 
 /// <summary>The trusted subset of an OpenID Connect discovery document.</summary>
+/// <param name="Issuer">The validated issuer URL.</param>
+/// <param name="AuthorizationEndpoint">The authorization endpoint, for the authorization-code flow.</param>
+/// <param name="TokenEndpoint">The token endpoint.</param>
+/// <param name="DeviceAuthorizationEndpoint">The device authorization endpoint, when the provider supports the device flow.</param>
+/// <param name="CodeChallengeMethodsSupported">The PKCE code challenge methods the provider advertises.</param>
 public sealed record OidcProviderMetadata(
     string Issuer,
     string AuthorizationEndpoint,

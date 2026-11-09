@@ -41,6 +41,8 @@ public abstract record ExecEvent
 }
 
 /// <summary>A chunk of standard output or error.</summary>
+/// <param name="IsStdErr">True for standard error, false for standard output.</param>
+/// <param name="Data">The raw output bytes.</param>
 public sealed record ExecOutput(bool IsStdErr, ReadOnlyMemory<byte> Data) : ExecEvent
 {
     /// <summary>Decodes the chunk as UTF-8.</summary>
@@ -48,9 +50,13 @@ public sealed record ExecOutput(bool IsStdErr, ReadOnlyMemory<byte> Data) : Exec
 }
 
 /// <summary>The terminal event carrying the command exit code.</summary>
+/// <param name="ExitCode">The exit code of the command.</param>
 public sealed record ExecExit(int ExitCode) : ExecEvent;
 
 /// <summary>The buffered result of a command.</summary>
+/// <param name="ExitCode">The exit code of the command.</param>
+/// <param name="Stdout">Everything the command wrote to standard output.</param>
+/// <param name="Stderr">Everything the command wrote to standard error.</param>
 public sealed record ExecResult(int ExitCode, ReadOnlyMemory<byte> Stdout, ReadOnlyMemory<byte> Stderr)
 {
     /// <summary>Standard output decoded as UTF-8.</summary>
