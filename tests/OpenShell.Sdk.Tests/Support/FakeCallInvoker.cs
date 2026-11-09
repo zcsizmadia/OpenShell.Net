@@ -169,6 +169,9 @@ internal sealed class FakeCallInvoker : CallInvoker
 
     public List<(string Method, object Request, CallOptions Options)> Calls { get; } = [];
 
+    /// <summary>Full method names (<c>/package.Service/Method</c>) of the unary calls, in order.</summary>
+    public List<string> UnaryFullNames { get; } = [];
+
     public FakeCallInvoker Unary<TReq, TResp>(string method, Func<TReq, TResp> handler)
         where TReq : class
         where TResp : class =>
@@ -201,6 +204,7 @@ internal sealed class FakeCallInvoker : CallInvoker
         Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request)
     {
         Calls.Add((method.Name, request, options));
+        UnaryFullNames.Add(method.FullName);
         if (!_unary.TryGetValue(method.Name, out var handler))
         {
             throw new InvalidOperationException($"no fake handler for {method.Name}");

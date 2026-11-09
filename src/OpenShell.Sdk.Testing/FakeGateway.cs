@@ -35,7 +35,7 @@ public sealed partial class FakeGateway : IDisposable
         DuplexCore = new ClientCore(
             new OpenShellClientOptions { Address = new Uri("http://fake.invalid") },
             null,
-            new GrpcService.OpenShellClient(new DuplexInvoker(this)));
+            new DuplexInvoker(this));
         CreateWorkspaceLocked(Options.DefaultWorkspace, null);
         foreach (var profile in Options.BuiltinProfiles ?? [])
         {

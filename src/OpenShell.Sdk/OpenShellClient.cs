@@ -145,6 +145,13 @@ public sealed class OpenShellClient : IOpenShellClient
     /// <summary>The generated gRPC client, for RPCs the curated surface does not cover yet.</summary>
     public GrpcService.OpenShellClient Raw => _core.Grpc;
 
+    /// <summary>
+    /// The generated gRPC client for the separate <c>openshell.v1.SandboxUpdates</c> service, on the same connection,
+    /// authentication, retry, and telemetry pipeline as <see cref="Raw"/>. The gateway serves it only when sandbox
+    /// updates are enabled (<c>[openshell.gateway] enable_sandbox_updates = true</c>).
+    /// </summary>
+    public Openshell.V1.SandboxUpdates.SandboxUpdatesClient RawSandboxUpdates => _core.SandboxUpdates;
+
     /// <inheritdoc />
     public IOpenShellClient InWorkspace(string workspace)
     {
@@ -181,7 +188,7 @@ public sealed class OpenShellClient : IOpenShellClient
         // Outside the retry layer, so a retried call is one span with the final outcome.
         invoker = new InstrumentedCallInvoker(invoker);
 
-        return new ClientCore(options, channel, new GrpcService.OpenShellClient(invoker)) { OwnedResource = resource, Logger = logger };
+        return new ClientCore(options, channel, invoker) { OwnedResource = resource, Logger = logger };
     }
 
     /// <summary>Test seam: builds a client over a pre-built gRPC invoker.</summary>
@@ -190,7 +197,7 @@ public sealed class OpenShellClient : IOpenShellClient
         var logger = LoggerFor(options);
         var effective = useRetry ? new RetryCallInvoker(invoker, options.Retry, time ?? TimeProvider.System, logger: logger) : invoker;
         return new OpenShellClient(
-            new ClientCore(options, null, new GrpcService.OpenShellClient(new InstrumentedCallInvoker(effective))) { Time = time ?? TimeProvider.System, Logger = logger },
+            new ClientCore(options, null, new InstrumentedCallInvoker(effective)) { Time = time ?? TimeProvider.System, Logger = logger },
             options.DefaultWorkspace,
             ownsCore: true);
     }

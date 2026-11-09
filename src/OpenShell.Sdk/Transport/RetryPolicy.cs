@@ -142,6 +142,18 @@ internal sealed partial class RetryCallInvoker(
 
         delay = policy.DelayBefore(attempt, _random);
 
+        // Wait at least as long as the gateway asked (google.rpc.RetryInfo, for example on MUTATION_LOCK_TIMEOUT).
+        // A request to wait longer than the policy allows ends the retries and surfaces the error with its delay.
+        if (ErrorDetails.From(e).RetryDelay is { } suggested && suggested > delay)
+        {
+            if (suggested > policy.MaxBackoff)
+            {
+                return false;
+            }
+
+            delay = suggested;
+        }
+
         // Never retry past the caller's own deadline.
         return options.Deadline is not { } deadline || time.GetUtcNow().UtcDateTime + delay < deadline;
     }

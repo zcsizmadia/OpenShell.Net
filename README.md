@@ -169,7 +169,7 @@ using var client = new OpenShellClient(new OpenShellClientOptions
 
 ## Retries
 
-Reads (`Get*`, `List*`, and `Health`) that fail with `Unavailable` are retried up to four times with exponential backoff and jitter. Writes are never retried by default, because a lost response could repeat a side effect. Retries stop at the call's deadline and when the caller cancels. Streaming calls are not retried; `Watch.WatchAsync` reconnects on its own.
+Reads (`Get*`, `List*`, and `Health`) that fail with `Unavailable` are retried up to four times with exponential backoff and jitter. Writes are never retried by default, because a lost response could repeat a side effect. Retries stop at the call's deadline and when the caller cancels. Streaming calls are not retried; `Watch.WatchAsync` reconnects on its own. When the gateway attaches a retry delay (`RetryInfo`, for example with the `MUTATION_LOCK_TIMEOUT` reason after a 10 s wait for a sandbox or workspace lock), the next attempt waits at least that long; a delay longer than `MaxBackoff` ends the retries and surfaces the error with its `RetryDelay`.
 
 ```csharp
 using OpenShell;
@@ -295,7 +295,7 @@ var credentials = await operatorClient.Providers.GetCredentialsAsync(
 
 ## Raw client
 
-`OpenShellClient.Raw` exposes the generated gRPC client for RPCs the curated surface does not cover. Raw calls use protobuf wire types and do not map errors to `OpenShellException`.
+`OpenShellClient.Raw` exposes the generated gRPC client for RPCs the curated surface does not cover, and `OpenShellClient.RawSandboxUpdates` the client for the separate `SandboxUpdates` service. Both share the connection, authentication, retries, and telemetry of the curated client. Raw calls use protobuf wire types and do not map errors to `OpenShellException`.
 
 ## Dependency injection
 

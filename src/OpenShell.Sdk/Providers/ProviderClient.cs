@@ -86,6 +86,7 @@ internal sealed partial class ProviderClient(ClientCore core, string workspace) 
                     WorkspaceScope = ClientCore.ListScope(workspace, options.AllWorkspaces),
                     PageSize = options.PageSize,
                     PageToken = token ?? "",
+                    LabelSelector = options.LabelSelector ?? "",
                 };
                 var response = await core.UnaryAsync(o => core.Grpc.ListProvidersAsync(request, o), ct).ConfigureAwait(false);
                 return new Page<Provider>(

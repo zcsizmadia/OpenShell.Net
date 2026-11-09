@@ -90,6 +90,21 @@ public sealed partial class FakeGateway
 
     internal static OpenShellException Invalid(string message) => new(OpenShellErrorKind.InvalidArgument, message);
 
+    /// <summary>The annotation key prefix the gateway reserves for itself on sandbox create and config update.</summary>
+    internal const string ReservedAnnotationPrefix = "internal.openshell.ai/";
+
+    /// <summary>Rejects caller-supplied annotation keys in the gateway-reserved namespace, as the gateway does.</summary>
+    internal static void RejectReservedAnnotations(IEnumerable<KeyValuePair<string, string>>? annotations, string field)
+    {
+        foreach (var (key, _) in annotations ?? [])
+        {
+            if (key.StartsWith(ReservedAnnotationPrefix, StringComparison.Ordinal))
+            {
+                throw Invalid($"{field} key '{key}' uses the reserved '{ReservedAnnotationPrefix}' prefix");
+            }
+        }
+    }
+
     internal static OpenShellException Conflict(string message) => new(OpenShellErrorKind.Conflict, message);
 
     /// <summary>Deletes with the gateway's allow-missing rules.</summary>

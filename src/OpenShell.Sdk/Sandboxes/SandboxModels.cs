@@ -28,6 +28,10 @@ public enum SandboxPhase
     Starting = 8,
     /// <summary>The main process finished and will not restart.</summary>
     Completed = 9,
+    /// <summary>Suspension was requested; the compute driver has not confirmed it yet.</summary>
+    Suspending = 11,
+    /// <summary>Frozen with its memory retained. Resuming restores it; starting discards the retained state.</summary>
+    Suspended = 12,
 }
 
 /// <summary>Restart behaviour for the sandbox main process.</summary>
