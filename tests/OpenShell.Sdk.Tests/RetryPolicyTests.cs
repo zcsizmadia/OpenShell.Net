@@ -152,6 +152,25 @@ public class RetryPolicyTests
     }
 
     [Test]
+    public async Task Retries_while_the_caller_deadline_leaves_room()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var attempts = 0;
+        var invoker = new FakeCallInvoker().Unary<Wire.HealthRequest, Wire.HealthResponse>("Health", _ =>
+            ++attempts == 1
+                ? throw new RpcException(new Status(StatusCode.Unavailable, "blip"))
+                : new Wire.HealthResponse { Version = "ok" });
+        // The 100ms backoff fits well inside the 30 s deadline, so the retry goes ahead.
+        using var client = NewClient(invoker, time, Fast, timeout: TimeSpan.FromSeconds(30));
+
+        var task = client.Health.CheckAsync().AsTask();
+        await Drive(time, task);
+
+        await Assert.That((await task).Version).IsEqualTo("ok");
+        await Assert.That(attempts).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task Stops_retrying_when_the_caller_cancels()
     {
         var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.Unavailable, "x");

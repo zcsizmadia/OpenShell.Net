@@ -421,9 +421,11 @@ Write your own code against `IOpenShellClient` and its per-area interfaces, such
 Protobuf bindings are generated at build time from the repository `proto/` directory and are never committed. You need the .NET 11 SDK and the .NET 8 and .NET 10 runtimes. From the repository root, in Bash (Git Bash on Windows):
 
 ```shell
-scripts/ci.sh            # format check, build, unit tests on every framework, coverage summary, pack
-scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack
+scripts/ci.sh            # format check, build, unit tests on every framework, coverage summary, pack, smoke
+scripts/ci.sh test       # or one step: format, build, test, coverage, integration, pack, smoke, aot
 ```
+
+`smoke` restores the freshly packed packages into a small consumer app under `tests/package-smoke/` and runs it on every framework. `aot` publishes another consumer with Native AOT, failing on any trim or AOT warning, and runs it; it needs the platform's native toolchain (clang on Linux, the Visual Studio C++ tools on Windows). Packing runs NuGet package validation.
 
 The integration tests run against a real gateway and skip unless `OPENSHELL_GATEWAY_ADDRESS` is set (see `tests/OpenShell.Sdk.IntegrationTests/GatewayFixture.cs` for the token, CA, and mTLS variables). On Linux with Docker, `scripts/integration-gateway.sh` starts the upstream gateway release from `UPSTREAM_VERSION` with the Docker compute driver and mTLS, runs a command against it, and stops it; the Integration workflow runs it on every pull request and nightly:
 
@@ -443,6 +445,17 @@ scripts/sync-upstream.sh v0.1.7    # or to a specific tag or commit
 ```
 
 A weekly workflow does this automatically. When upstream publishes a release, it opens a pull request with the synced files and the result of the full check against them.
+
+## Mutation testing
+
+[Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) (a local tool in `dotnet-tools.json`, configured in `tests/OpenShell.Sdk.Tests/stryker-config.json`) mutates `OpenShell.Sdk` and reports the changes no test catches. It runs weekly in the "Mutation testing" workflow, which uploads the HTML report; the score is a report, not a gate. To run it locally (about 7 minutes for the whole SDK):
+
+```shell
+dotnet tool restore
+cd tests/OpenShell.Sdk.Tests
+dotnet stryker                  # everything
+dotnet stryker --since main     # only code changed since main
+```
 
 ## License
 

@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+    SPDX-License-Identifier: Apache-2.0
+
+    Stops the repository's central package versions from applying: consumers pin their own versions.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

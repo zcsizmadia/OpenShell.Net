@@ -1,0 +1,24 @@
+<Project>
+  <!--
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+    SPDX-License-Identifier: Apache-2.0
+
+    Consumer projects for scripts/ci.sh smoke and aot. They sit outside the solution and do not import the
+    repository's build settings, so they see the packages exactly as a NuGet consumer does.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <!--
+      Restore into a private folder: every local or CI pack reuses a version such as 0.1.7-dev, and the global
+      package cache would otherwise serve a stale copy of it.
+    -->
+    <RestorePackagesPath>$(MSBuildThisFileDirectory).packages</RestorePackagesPath>
+    <!-- Set by scripts/ci.sh from the packed artifacts. -->
+    <OpenShellPackageVersion Condition="'$(OpenShellPackageVersion)' == ''">0.0.0-missing</OpenShellPackageVersion>
+  </PropertyGroup>
+</Project>
