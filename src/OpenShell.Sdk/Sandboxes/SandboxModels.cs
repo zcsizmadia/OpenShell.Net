@@ -239,6 +239,41 @@ public sealed record DeleteOptions
     public string? RequestId { get; init; }
 }
 
+/// <summary>
+/// A change to a stopped sandbox's configuration, for <see cref="ISandboxClient.UpdateAsync"/>. A null property is left
+/// unchanged; a non-null one replaces the current value, and an empty collection is meaningful.
+/// </summary>
+public sealed record SandboxUpdate
+{
+    /// <summary>A new OCI image reference. Must not be empty.</summary>
+    public string? Image { get; init; }
+
+    /// <summary>The new command (argv). An empty list runs the image's default shell.</summary>
+    public IReadOnlyList<string>? Command { get; init; }
+
+    /// <summary>The new sandbox-level environment overrides. An empty map clears them; template defaults remain.</summary>
+    public IReadOnlyDictionary<string, string>? Environment { get; init; }
+
+    /// <summary>The new user labels. Gateway-owned labels are preserved; system keys are rejected.</summary>
+    public IReadOnlyDictionary<string, string>? Labels { get; init; }
+
+    /// <summary>The new user annotations. Gateway-owned annotations are preserved; system keys are rejected.</summary>
+    public IReadOnlyDictionary<string, string>? Annotations { get; init; }
+
+    internal bool IsEmpty => Image is null && Command is null && Environment is null && Labels is null && Annotations is null;
+}
+
+/// <summary>Options for <see cref="ISandboxClient.UpdateAsync"/> and <see cref="ISandboxClient.ResumePendingUpdateAsync"/>.</summary>
+public sealed record UpdateSandboxOptions
+{
+    /// <summary>
+    /// Idempotency key (a UUID). Retrying with the same key after an unknown outcome returns the original result;
+    /// reusing it after an error reports <c>REQUEST_OUTCOME_UNCERTAIN</c>, and with a different payload
+    /// <c>REQUEST_ID_PAYLOAD_MISMATCH</c>.
+    /// </summary>
+    public string? RequestId { get; init; }
+}
+
 /// <summary>Options for <see cref="ISandboxClient.ResumeAsync"/>.</summary>
 public sealed record ResumeSandboxOptions
 {

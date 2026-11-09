@@ -62,6 +62,9 @@ internal sealed class SandboxEntry
 
     public TokenGrantFailureObservation? LastTokenGrantFailure { get; set; }
 
+    /// <summary>An interrupted configuration update; blocks start and stop until it is resumed.</summary>
+    public SandboxUpdate? PendingUpdate { get; set; }
+
     public int? ExitCode { get; set; }
 
     public int RestartCount { get; set; }
