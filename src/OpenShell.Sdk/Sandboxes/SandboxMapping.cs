@@ -38,8 +38,47 @@ internal static class SandboxMapping
             RestartCount = status?.RestartCount ?? 0,
             HostKeyFingerprint = s.HostKeyFingerprint is { Length: > 0 } fp ? fp : null,
             Image = s.Spec?.Template?.Image is { Length: > 0 } img ? img : null,
+            EndpointStatuses = status is null ? [] : status.EndpointStatuses.Select(ToDomain).ToArray(),
+            LastTokenGrantFailure = status?.LastTokenGrantFailure is { } grant
+                ? new TokenGrantFailureObservation
+                {
+                    DestinationHost = grant.DestinationHost,
+                    DestinationPort = grant.DestinationPort,
+                    Failure = ToDomain(grant.Failure),
+                }
+                : null,
         };
     }
+
+    private static EndpointStatus ToDomain(Wire.EndpointStatus e) => new()
+    {
+        EndpointId = e.EndpointId,
+        Host = e.Host,
+        Ports = [.. e.Ports],
+        Path = e.Path,
+        LastResult = Known((EndpointResult)(int)e.LastResult),
+        LastReportedAt = e.LastReportedTime?.ToDateTimeOffset(),
+        LastFailure = ToDomain(e.LastFailure),
+    };
+
+    private static EndpointFailure? ToDomain(Wire.EndpointFailure? f) => f is null
+        ? null
+        : new EndpointFailure
+        {
+            Domain = Known((EndpointFailureDomain)(int)f.Domain),
+            Code = f.Code,
+            RecoveryAction = Known((RefreshRecoveryAction)(int)f.RecoveryAction),
+            Provider = f.Provider,
+            CredentialKey = f.CredentialKey,
+            Stage = f.Stage,
+            UpstreamHttpStatus = f.HasUpstreamHttpStatus ? f.UpstreamHttpStatus : null,
+            RequestId = f.RequestId,
+        };
+
+    /// <summary>Maps enum values from a newer gateway that this SDK version does not know to <c>Unspecified</c> (0).</summary>
+    private static T Known<T>(T value)
+        where T : struct, System.Enum =>
+        System.Enum.IsDefined(value) ? value : default;
 
     public static Wire.SandboxSpec ToWire(SandboxSpec spec)
     {

@@ -30,6 +30,34 @@ public sealed partial class FakeGateway
         }
     }
 
+    /// <summary>
+    /// Reports what the sandbox supervisor observed for its endpoints, as a real supervisor does through the gateway.
+    /// Reads return the values on <see cref="Sandbox.EndpointStatuses"/> and <see cref="Sandbox.LastTokenGrantFailure"/>,
+    /// and watchers see the change.
+    /// </summary>
+    /// <param name="sandbox">The sandbox name.</param>
+    /// <param name="endpointStatuses">The endpoint statuses; replaces the previous ones.</param>
+    /// <param name="lastTokenGrantFailure">The latest token-grant failure, or null for none.</param>
+    /// <param name="workspace">The workspace; defaults to the gateway default workspace.</param>
+    public void ReportEndpointStatuses(
+        string sandbox,
+        IReadOnlyList<EndpointStatus> endpointStatuses,
+        TokenGrantFailureObservation? lastTokenGrantFailure = null,
+        string? workspace = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sandbox);
+        ArgumentNullException.ThrowIfNull(endpointStatuses);
+        lock (Sync)
+        {
+            var entry = FindSandbox(workspace ?? Options.DefaultWorkspace, sandbox);
+
+            // Records are immutable except for the port list, so copying the list keeps later caller edits out.
+            entry.EndpointStatuses = [.. endpointStatuses.Select(s => s with { Ports = [.. s.Ports] })];
+            entry.LastTokenGrantFailure = lastTokenGrantFailure;
+            Touch(entry);
+        }
+    }
+
     /// <summary>Adds a log line to a sandbox. It reaches watchers and <see cref="ISandboxWatchClient.GetLogsAsync"/>. Returns its cursor.</summary>
     public string EmitLog(string sandbox, string message, string level = "INFO", string source = "sandbox", string? workspace = null)
     {
@@ -91,6 +119,8 @@ public sealed partial class FakeGateway
             CurrentPolicyVersion = e.PolicyVersion,
             RestartCount = (uint)e.RestartCount,
             Image = e.Spec.Template?.Image ?? e.Spec.Image,
+            EndpointStatuses = e.EndpointStatuses,
+            LastTokenGrantFailure = e.LastTokenGrantFailure,
         };
     }
 

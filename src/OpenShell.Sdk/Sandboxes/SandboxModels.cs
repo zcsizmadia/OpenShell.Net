@@ -203,6 +203,12 @@ public sealed record Sandbox
     /// <summary>Image from the desired spec, when set.</summary>
     public string? Image { get; init; }
 
+    /// <summary>What the supervisor last observed for each declared endpoint.</summary>
+    public IReadOnlyList<EndpointStatus> EndpointStatuses { get; init; } = [];
+
+    /// <summary>The latest gateway-managed token grant that failed in this sandbox; null when there is none.</summary>
+    public TokenGrantFailureObservation? LastTokenGrantFailure { get; init; }
+
     internal static IReadOnlyDictionary<string, string> EmptyMap { get; } =
         new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(new Dictionary<string, string>());
 }
