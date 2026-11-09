@@ -189,6 +189,7 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         {
             await foreach (var _ in ReadEventsCoreAsync(cancellationToken).ConfigureAwait(false))
             {
+                // Drain: reading the events to the end is what records the exit code.
             }
         }
 
