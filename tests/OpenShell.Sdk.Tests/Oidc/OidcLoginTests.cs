@@ -126,11 +126,23 @@ public class OidcLoginTests
             var query = CallbackServer.ParseQuery(url.Query.TrimStart('?'));
             var port = new Uri(query["redirect_uri"]).Port;
             using var http = new HttpClient();
-            statuses.Add((await http.GetAsync($"http://127.0.0.1:{port}/callback?code=evil&state=wrong", ct)).StatusCode);
-            statuses.Add((await http.GetAsync($"http://127.0.0.1:{port}/callback?state={query["state"]}", ct)).StatusCode);
-            statuses.Add((await http.GetAsync($"http://127.0.0.1:{port}/elsewhere", ct)).StatusCode);
-            statuses.Add((await http.PostAsync($"http://127.0.0.1:{port}/callback", new StringContent(""), ct)).StatusCode);
-            statuses.Add((await http.GetAsync($"http://127.0.0.1:{port}/callback?code=good&state={query["state"]}", ct)).StatusCode);
+            async Task SendAsync(HttpMethod method, string pathAndQuery)
+            {
+                using var request = new HttpRequestMessage(method, $"http://127.0.0.1:{port}{pathAndQuery}");
+                if (method == HttpMethod.Post)
+                {
+                    request.Content = new StringContent("");
+                }
+
+                using var response = await http.SendAsync(request, ct);
+                statuses.Add(response.StatusCode);
+            }
+
+            await SendAsync(HttpMethod.Get, "/callback?code=evil&state=wrong");
+            await SendAsync(HttpMethod.Get, $"/callback?state={query["state"]}");
+            await SendAsync(HttpMethod.Get, "/elsewhere");
+            await SendAsync(HttpMethod.Post, "/callback");
+            await SendAsync(HttpMethod.Get, $"/callback?code=good&state={query["state"]}");
         });
 
         var tokens = await OidcLogin.LoginAsync(options);
@@ -236,7 +248,7 @@ public class OidcLoginTests
     [Test]
     public async Task Busy_callback_port_falls_back_to_the_keyboard_flow()
     {
-        var busy = new TcpListener(IPAddress.Loopback, 0);
+        using var busy = new TcpListener(IPAddress.Loopback, 0);
         busy.Start();
         try
         {
@@ -308,7 +320,7 @@ public class OidcLoginTests
     [Test]
     public async Task Callback_server_starts_on_the_first_free_port()
     {
-        var busy = new TcpListener(IPAddress.Loopback, 0);
+        using var busy = new TcpListener(IPAddress.Loopback, 0);
         busy.Start();
         try
         {
@@ -374,7 +386,7 @@ public class OidcLoginTests
 
         await Assert.That(cached.AccessToken).IsEqualTo("login-access");
         await Assert.That(handler.CountTo("/token")).IsEqualTo(1);
-        await Assert.That(File.Exists(Path.Combine(dir.Path, "oidc_token.json"))).IsTrue();
+        await Assert.That(File.Exists(Path.Join(dir.Path, "oidc_token.json"))).IsTrue();
 
         // Once expired the cache is ignored and a fresh login happens.
         time.Advance(TimeSpan.FromHours(2));
@@ -414,7 +426,7 @@ public class OidcLoginTests
     public async Task A_corrupt_cache_does_not_block_a_fresh_login()
     {
         using var dir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"), "{corrupt");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "oidc_token.json"), "{corrupt");
         var handler = StubHandler.Provider(Issuer, _ => TokenOk());
         var options = Options(handler, Browser(q => $"code=c&state={q["state"]}")) with { InMemory = true, TokenCacheDirectory = dir.Path };
         // InMemory skips the cache entirely; flip it off to exercise the corrupt-read path, accepting that the write then replaces it.
@@ -442,7 +454,7 @@ public class OidcLoginTests
 
         await OidcLogin.LoginAsync(options);
 
-        await Assert.That(File.Exists(Path.Combine(dir.Path, "oidc_token.json"))).IsTrue();
+        await Assert.That(File.Exists(Path.Join(dir.Path, "oidc_token.json"))).IsTrue();
     }
 
     [Test]

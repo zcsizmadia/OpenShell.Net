@@ -162,7 +162,7 @@ public class ClientBuilderTests
     [Test]
     public async Task Client_credentials_provider_is_a_container_singleton_disposed_with_the_container()
     {
-        var provider = Build(s => s.AddOpenShellClient()
+        using var provider = Build(s => s.AddOpenShellClient()
             .WithAddress("https://g.example.com")
             .WithClientCredentials("https://idp.example.com", "svc", _ => ValueTask.FromResult("s3cret"), "sandbox:read", "sandbox:write"));
 

@@ -106,7 +106,7 @@ public class GatewayClientTests
 
     private static void MakeMtls(string gatewayDir, bool ca = true, bool pair = true)
     {
-        var dir = Path.Combine(gatewayDir, "mtls");
+        var dir = Path.Join(gatewayDir, "mtls");
         Directory.CreateDirectory(dir);
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("CN=test", key, HashAlgorithmName.SHA256);
@@ -114,13 +114,13 @@ public class GatewayClientTests
         using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
         if (ca)
         {
-            File.WriteAllText(Path.Combine(dir, "ca.crt"), cert.ExportCertificatePem());
+            File.WriteAllText(Path.Join(dir, "ca.crt"), cert.ExportCertificatePem());
         }
 
         if (pair)
         {
-            File.WriteAllText(Path.Combine(dir, "tls.crt"), cert.ExportCertificatePem());
-            File.WriteAllText(Path.Combine(dir, "tls.key"), key.ExportPkcs8PrivateKeyPem());
+            File.WriteAllText(Path.Join(dir, "tls.crt"), cert.ExportCertificatePem());
+            File.WriteAllText(Path.Join(dir, "tls.key"), key.ExportPkcs8PrivateKeyPem());
         }
     }
 
@@ -174,7 +174,7 @@ public class GatewayClientTests
     {
         using var dir = new TempDirectory();
         MakeMtls(dir.Path);
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "mtls", "tls.key"), "-----BEGIN PRIVATE KEY-----\nSECRET-GARBAGE\n-----END PRIVATE KEY-----");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "mtls", "tls.key"), "-----BEGIN PRIVATE KEY-----\nSECRET-GARBAGE\n-----END PRIVATE KEY-----");
 
         var ex = await Assert.That(() => GatewayClient.CreateOptions(Config(dir.Path, GatewayAuthMode.Mtls))).Throws<OpenShellException>();
 
@@ -189,7 +189,7 @@ public class GatewayClientTests
     {
         using var dir = new TempDirectory();
         var options = GatewayClient.CreateOptions(Config(dir.Path, GatewayAuthMode.CloudflareJwt));
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "edge_token"), "  edge.jwt-1\n");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "edge_token"), "  edge.jwt-1\n");
 
         using var request = await Apply(options.Auth);
 
@@ -204,7 +204,7 @@ public class GatewayClientTests
     public async Task Edge_token_is_cached_after_first_use()
     {
         using var dir = new TempDirectory();
-        var path = Path.Combine(dir.Path, "edge_token");
+        var path = Path.Join(dir.Path, "edge_token");
         await File.WriteAllTextAsync(path, "first");
         var auth = GatewayClient.CreateOptions(Config(dir.Path, GatewayAuthMode.CloudflareJwt)).Auth;
         using var one = await Apply(auth);
@@ -219,13 +219,13 @@ public class GatewayClientTests
     public async Task Legacy_cf_token_is_a_fallback_and_edge_token_wins()
     {
         using var legacy = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(legacy.Path, "cf_token"), "legacy");
+        await File.WriteAllTextAsync(Path.Join(legacy.Path, "cf_token"), "legacy");
         using var request = await Apply(GatewayClient.CreateOptions(Config(legacy.Path, GatewayAuthMode.CloudflareJwt)).Auth);
         await Assert.That(request.Headers.Authorization!.Parameter).IsEqualTo("legacy");
 
         using var both = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(both.Path, "cf_token"), "legacy");
-        await File.WriteAllTextAsync(Path.Combine(both.Path, "edge_token"), "primary");
+        await File.WriteAllTextAsync(Path.Join(both.Path, "cf_token"), "legacy");
+        await File.WriteAllTextAsync(Path.Join(both.Path, "edge_token"), "primary");
         using var request2 = await Apply(GatewayClient.CreateOptions(Config(both.Path, GatewayAuthMode.CloudflareJwt)).Auth);
         await Assert.That(request2.Headers.Authorization!.Parameter).IsEqualTo("primary");
     }
@@ -239,13 +239,13 @@ public class GatewayClientTests
         await Assert.That(ex1!.Kind).IsEqualTo(OpenShellErrorKind.Auth);
 
         using var empty = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(empty.Path, "edge_token"), "  \n");
+        await File.WriteAllTextAsync(Path.Join(empty.Path, "edge_token"), "  \n");
         var auth2 = GatewayClient.CreateOptions(Config(empty.Path, GatewayAuthMode.CloudflareJwt)).Auth;
         var ex2 = await Assert.That(async () => await Apply(auth2)).Throws<OpenShellException>();
         await Assert.That(ex2!.Message).Contains("empty");
 
         using var unsafeDir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(unsafeDir.Path, "edge_token"), "a; Path=/evil");
+        await File.WriteAllTextAsync(Path.Join(unsafeDir.Path, "edge_token"), "a; Path=/evil");
         var auth3 = GatewayClient.CreateOptions(Config(unsafeDir.Path, GatewayAuthMode.CloudflareJwt)).Auth;
         var ex3 = await Assert.That(async () => await Apply(auth3)).Throws<OpenShellException>();
         await Assert.That(ex3!.Kind).IsEqualTo(OpenShellErrorKind.InvalidConfig);
@@ -368,7 +368,7 @@ public class GatewayClientTests
     public async Task A_failed_write_back_does_not_fail_the_call()
     {
         using var rig = new OidcRig();
-        var path = Path.Combine(rig.Dir.Path, "oidc_token.json");
+        var path = Path.Join(rig.Dir.Path, "oidc_token.json");
         rig.WriteDisk("stale", "refresh-1", Now.AddMinutes(-5));
         File.SetAttributes(path, FileAttributes.ReadOnly);
         try
@@ -420,7 +420,7 @@ public class GatewayClientTests
     public async Task A_cli_written_token_is_served_and_renewed_tokens_stay_readable_by_the_cli()
     {
         using var rig = new OidcRig();
-        var path = Path.Combine(rig.Dir.Path, "oidc_token.json");
+        var path = Path.Join(rig.Dir.Path, "oidc_token.json");
         await File.WriteAllTextAsync(
             path,
             $$"""{"access_token":"cli-token","refresh_token":"cli-refresh","expires_at":{{Now.AddMinutes(10).ToUnixTimeSeconds()}},"issuer":"{{Idp}}","client_id":"cli"}""");

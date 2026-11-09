@@ -18,7 +18,7 @@ public class OidcTokenFileTests
     public async Task Reads_the_shared_conformance_bundle()
     {
         using var dir = new TempDirectory();
-        File.Copy(ConformanceFixture.PathOf("oidc-token-bundle.json"), Path.Combine(dir.Path, "oidc_token.json"));
+        File.Copy(ConformanceFixture.PathOf("oidc-token-bundle.json"), Path.Join(dir.Path, "oidc_token.json"));
 
         var stored = OidcTokenFile.Read(dir.Path)!;
 
@@ -38,7 +38,7 @@ public class OidcTokenFileTests
 
         OidcTokenFile.Write(dir.Path, tokens, Issuer, Client);
 
-        using var written = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json")));
+        using var written = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Join(dir.Path, "oidc_token.json")));
         using var expected = JsonDocument.Parse(await File.ReadAllTextAsync(ConformanceFixture.PathOf("oidc-token-bundle.json")));
         await Assert.That(Describe(written.RootElement)).IsEqualTo(Describe(expected.RootElement));
     }
@@ -50,7 +50,7 @@ public class OidcTokenFileTests
         var time = new FakeTimeProvider(Now);
         OidcTokenFile.Write(dir.Path, new OidcTokens("acc"), Issuer, Client);
 
-        var json = await File.ReadAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"));
+        var json = await File.ReadAllTextAsync(Path.Join(dir.Path, "oidc_token.json"));
         await Assert.That(json).IsEqualTo("""{"access_token":"acc","issuer":"https://issuer.example.com","client_id":"openshell-cli"}""");
 
         time.Advance(TimeSpan.FromDays(3650));
@@ -61,7 +61,7 @@ public class OidcTokenFileTests
     public async Task Expiry_is_stored_in_whole_unix_seconds_and_clamped_at_the_epoch()
     {
         using var dir = new TempDirectory();
-        var path = Path.Combine(dir.Path, "oidc_token.json");
+        var path = Path.Join(dir.Path, "oidc_token.json");
 
         OidcTokenFile.Write(dir.Path, new OidcTokens("acc", ExpiresAt: Now.AddMilliseconds(900)), Issuer, Client);
         await Assert.That(await File.ReadAllTextAsync(path)).Contains($"\"expires_at\":{Now.ToUnixTimeSeconds()}");
@@ -101,7 +101,7 @@ public class OidcTokenFileTests
     {
         using var dir = new TempDirectory();
         await File.WriteAllTextAsync(
-            Path.Combine(dir.Path, "oidc_token.json"),
+            Path.Join(dir.Path, "oidc_token.json"),
             """{"access_token":"old","refresh_token":"r","expiry":"2099-01-01T00:00:00Z","expires_in":3600}""");
 
         var stored = OidcTokenFile.Read(dir.Path)!;
@@ -120,10 +120,10 @@ public class OidcTokenFileTests
         await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
         await Assert.That(OidcTokenFile.Read(dir.Combine("nope"))).IsNull();
 
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"), """{"access_token":""}""");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "oidc_token.json"), """{"access_token":""}""");
         await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
 
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "oidc_token.json"), "null");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "oidc_token.json"), "null");
         await Assert.That(OidcTokenFile.Read(dir.Path)).IsNull();
     }
 
@@ -131,7 +131,7 @@ public class OidcTokenFileTests
     public async Task Corrupt_files_are_reported()
     {
         using var dir = new TempDirectory();
-        var path = Path.Combine(dir.Path, "oidc_token.json");
+        var path = Path.Join(dir.Path, "oidc_token.json");
 
         await File.WriteAllTextAsync(path, "{nope");
         var ex1 = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
@@ -150,7 +150,7 @@ public class OidcTokenFileTests
     public async Task Unreadable_path_is_reported()
     {
         using var dir = new TempDirectory();
-        Directory.CreateDirectory(Path.Combine(dir.Path, "oidc_token.json"));
+        Directory.CreateDirectory(Path.Join(dir.Path, "oidc_token.json"));
 
         var ex = await Assert.That(() => OidcTokenFile.Read(dir.Path)).Throws<OidcException>();
 
@@ -161,10 +161,10 @@ public class OidcTokenFileTests
     public async Task Write_failures_are_reported_and_leave_no_temp_files()
     {
         using var dir = new TempDirectory();
-        var blocker = Path.Combine(dir.Path, "blocker");
+        var blocker = Path.Join(dir.Path, "blocker");
         await File.WriteAllTextAsync(blocker, "x");
 
-        var ex = await Assert.That(() => OidcTokenFile.Write(Path.Combine(blocker, "sub"), new OidcTokens("a"), Issuer, Client)).Throws<OidcException>();
+        var ex = await Assert.That(() => OidcTokenFile.Write(Path.Join(blocker, "sub"), new OidcTokens("a"), Issuer, Client)).Throws<OidcException>();
 
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.TokenPersist);
         await Assert.That(Directory.GetFiles(dir.Path).Length).IsEqualTo(1);
@@ -194,7 +194,7 @@ public class OidcTokenFileTests
         using var dir = new TempDirectory();
         OidcTokenFile.Write(dir.Path, new OidcTokens("a"), Issuer, Client);
 
-        await Assert.That(File.GetUnixFileMode(Path.Combine(dir.Path, "oidc_token.json"))).IsEqualTo(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        await Assert.That(File.GetUnixFileMode(Path.Join(dir.Path, "oidc_token.json"))).IsEqualTo(UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
     /// <summary>The properties of a JSON object in name order, so two bundles compare regardless of layout.</summary>

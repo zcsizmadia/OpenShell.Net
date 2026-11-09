@@ -240,7 +240,7 @@ public class RegistrationTests
     [Test]
     public async Task Disposing_the_provider_disposes_clients_and_blocks_new_ones()
     {
-        var provider = Build(s => s.AddOpenShell(o => o.Address = new Uri("http://localhost:1")));
+        using var provider = Build(s => s.AddOpenShell(o => o.Address = new Uri("http://localhost:1")));
         var factory = provider.GetRequiredService<IOpenShellClientFactory>();
         _ = factory.Create();
 

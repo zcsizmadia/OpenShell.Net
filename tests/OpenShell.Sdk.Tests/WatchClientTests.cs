@@ -288,6 +288,7 @@ public class WatchClientTests
         {
             await foreach (var _ in client.Watch.WatchAsync("sb", cancellationToken: cts.Token))
             {
+                // Drain until cancelled; the test checks how the watch ends.
             }
         });
         await Task.Delay(50);

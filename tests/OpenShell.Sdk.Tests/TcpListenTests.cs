@@ -74,6 +74,7 @@ public class TcpListenTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the client's frames; this test only checks the result.
             }
 
             ch.Send(Relay.Data("done"));

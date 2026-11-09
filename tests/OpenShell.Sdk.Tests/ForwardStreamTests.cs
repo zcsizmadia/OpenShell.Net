@@ -131,6 +131,7 @@ public class ForwardStreamTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the client's frames; this test only checks the result.
             }
 
             ch.Send(Relay.Data("bye"));
@@ -178,6 +179,7 @@ public class ForwardStreamTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the client's frames; this test only checks the result.
             }
         });
         using var client = ClientTests.NewClient(invoker);

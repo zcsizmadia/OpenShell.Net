@@ -126,7 +126,7 @@ public class FileUploadTests
     [Test]
     public async Task Upload_path_sends_a_tar_with_the_file_under_its_remote_name()
     {
-        var local = Path.Combine(Path.GetTempPath(), $"os-up-{Guid.NewGuid():N}.txt");
+        var local = Path.Join(Path.GetTempPath(), $"os-up-{Guid.NewGuid():N}.txt");
         await File.WriteAllTextAsync(local, "payload");
         try
         {
@@ -185,10 +185,10 @@ public class FileUploadTests
     [Test]
     public async Task Upload_directory_sends_every_file()
     {
-        var dir = Path.Combine(Path.GetTempPath(), $"os-updir-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(Path.Combine(dir, "sub"));
-        await File.WriteAllTextAsync(Path.Combine(dir, "a.txt"), "A");
-        await File.WriteAllTextAsync(Path.Combine(dir, "sub", "b.txt"), "B");
+        var dir = Path.Join(Path.GetTempPath(), $"os-updir-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Join(dir, "sub"));
+        await File.WriteAllTextAsync(Path.Join(dir, "a.txt"), "A");
+        await File.WriteAllTextAsync(Path.Join(dir, "sub", "b.txt"), "B");
         try
         {
             byte[]? archive = null;
@@ -227,6 +227,7 @@ public class FileUploadTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the uploaded frames; this test only checks the result.
             }
         });
         using var client = ClientTests.NewClient(invoker);
@@ -254,7 +255,7 @@ public class FileUploadTests
 
         await Assert.That(async () => await client.Files.UploadAsync("sb", " ", "/x")).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.UploadAsync("sb", dir, "/x")).Throws<ArgumentException>();
-        await Assert.That(async () => await client.Files.UploadAsync("sb", Path.Combine(dir, $"missing-{Guid.NewGuid():N}"), "/x")).Throws<FileNotFoundException>();
+        await Assert.That(async () => await client.Files.UploadAsync("sb", Path.Join(dir, $"missing-{Guid.NewGuid():N}"), "/x")).Throws<FileNotFoundException>();
         await Assert.That(async () => await client.Files.UploadAsync("sb", (Stream)null!, "/x")).Throws<ArgumentNullException>();
         await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream(), "")).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream(), "/dir/")).Throws<ArgumentException>();
@@ -263,7 +264,7 @@ public class FileUploadTests
         await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", " ", "/x")).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", dir, " ")).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", dir, "/a\0b")).Throws<ArgumentException>();
-        await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", Path.Combine(dir, $"missing-{Guid.NewGuid():N}"), "/x")).Throws<DirectoryNotFoundException>();
+        await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", Path.Join(dir, $"missing-{Guid.NewGuid():N}"), "/x")).Throws<DirectoryNotFoundException>();
     }
 
     [Test]
@@ -272,7 +273,7 @@ public class FileUploadTests
         var invoker = Tar.UploadTarget((_, _) => { });
         using var client = ClientTests.NewClient(invoker);
         var dir = Path.GetTempPath();
-        var missing = Path.Combine(dir, $"missing-{Guid.NewGuid():N}");
+        var missing = Path.Join(dir, $"missing-{Guid.NewGuid():N}");
 
         var isDirectory = await Assert.That(async () => await client.Files.UploadAsync("sb", dir, "/x")).Throws<ArgumentException>();
         await Assert.That(isDirectory!.Message).Contains("is a directory");
@@ -329,6 +330,7 @@ public class FileUploadTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the uploaded frames; this test only checks the result.
             }
 
             ch.Send(Interactive.Err(new string('e', 4096)));
@@ -384,7 +386,7 @@ public class FileUploadTests
 
 public class FileDownloadTests
 {
-    private static string TempPath(string name = "dl.txt") => Path.Combine(Path.GetTempPath(), $"os-{Guid.NewGuid():N}", name);
+    private static string TempPath(string name = "dl.txt") => Path.Join(Path.GetTempPath(), $"os-{Guid.NewGuid():N}", name);
 
     [Test]
     public async Task Download_writes_the_file_atomically_and_sends_the_tar_command()
@@ -450,7 +452,7 @@ public class FileDownloadTests
         var invoker = Tar.DownloadSource([], exitCode: 2, stderr: "tar: nope: Cannot open");
         using var client = ClientTests.NewClient(invoker);
 
-        var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/nope", new MemoryStream())).Throws<OpenShellException>();
+        var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/nope", Stream.Null)).Throws<OpenShellException>();
 
         await Assert.That(ex!.Message).Contains("code 2");
         await Assert.That(ex.Message).Contains("Cannot open");
@@ -462,7 +464,7 @@ public class FileDownloadTests
         async Task Expect(byte[] archive, string path, string message)
         {
             using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
-            var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", path, new MemoryStream())).Throws<InvalidDataException>();
+            var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", path, Stream.Null)).Throws<InvalidDataException>();
             await Assert.That(ex!.Message).Contains(message);
         }
 
@@ -477,12 +479,12 @@ public class FileDownloadTests
     public async Task A_truncated_or_empty_archive_is_reported_as_invalid_data()
     {
         using var empty = ClientTests.NewClient(Tar.DownloadSource([]));
-        var ex = await Assert.That(async () => await empty.Files.DownloadAsync("sb", "/a.txt", new MemoryStream())).Throws<InvalidDataException>();
+        var ex = await Assert.That(async () => await empty.Files.DownloadAsync("sb", "/a.txt", Stream.Null)).Throws<InvalidDataException>();
         await Assert.That(ex!.Message).Contains("prematurely");
 
         var full = await Tar.BuildAsync(Tar.File("a.txt", new string('z', 4000)));
         using var truncated = ClientTests.NewClient(Tar.DownloadSource(full[..1000]));
-        await Assert.That(async () => await truncated.Files.DownloadAsync("sb", "/a.txt", new MemoryStream())).Throws<InvalidDataException>();
+        await Assert.That(async () => await truncated.Files.DownloadAsync("sb", "/a.txt", Stream.Null)).Throws<InvalidDataException>();
 
         using var directory = ClientTests.NewClient(Tar.DownloadSource(full[..700]));
         var root = TempPath("tree");
@@ -504,7 +506,7 @@ public class FileDownloadTests
 
         var file = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", " ")).Throws<ArgumentException>();
         await Assert.That(file!.ParamName).IsEqualTo("localPath");
-        await Assert.That(async () => await client.Files.DownloadAsync("sb", "", new MemoryStream())).Throws<ArgumentException>();
+        await Assert.That(async () => await client.Files.DownloadAsync("sb", "", Stream.Null)).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", (Stream)null!)).Throws<ArgumentNullException>();
         var directory = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/x", " ")).Throws<ArgumentException>();
         await Assert.That(directory!.ParamName).IsEqualTo("localDirectory");
@@ -529,8 +531,8 @@ public class FileDownloadTests
         {
             await client.Files.DownloadDirectoryAsync("sb", "/srv/app", root);
 
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(root, "top.txt"))).IsEqualTo("T");
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(root, "sub", "deep.txt"))).IsEqualTo("D");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(root, "top.txt"))).IsEqualTo("T");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(root, "sub", "deep.txt"))).IsEqualTo("D");
             await Assert.That(Directory.GetFileSystemEntries(root).Length).IsEqualTo(2);
             await Assert.That(request!.Command).IsEquivalentTo(new[] { "tar", "-cf", "-", "-C", "/srv/app", "." });
         }
@@ -550,8 +552,8 @@ public class FileDownloadTests
         {
             await client.Files.DownloadDirectoryAsync("sb", "/srv", root);
 
-            await Assert.That(Directory.Exists(Path.Combine(root, "empty"))).IsTrue();
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(root, "implied", "deep", "f.txt"))).IsEqualTo("F");
+            await Assert.That(Directory.Exists(Path.Join(root, "empty"))).IsTrue();
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(root, "implied", "deep", "f.txt"))).IsEqualTo("F");
         }
         finally
         {
@@ -564,7 +566,7 @@ public class FileDownloadTests
     {
         var file = await Tar.BuildAsync(Tar.File("a.txt", "x"));
         using var single = ClientTests.NewClient(Tar.DownloadSource(file, exitCode: 3, stderr: "tar: late failure"));
-        var ex = await Assert.That(async () => await single.Files.DownloadAsync("sb", "/a.txt", new MemoryStream())).Throws<OpenShellException>();
+        var ex = await Assert.That(async () => await single.Files.DownloadAsync("sb", "/a.txt", Stream.Null)).Throws<OpenShellException>();
         await Assert.That(ex!.Message).Contains("code 3");
         await Assert.That(ex.Message).Contains("late failure");
 
@@ -664,7 +666,7 @@ public class FileDownloadTests
             {
                 var ex = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
                 await Assert.That(ex!.Message).Contains(reason);
-                await Assert.That(File.Exists(Path.Combine(Path.GetDirectoryName(root)!, "evil.txt"))).IsFalse();
+                await Assert.That(File.Exists(Path.Join(Path.GetDirectoryName(root)!, "evil.txt"))).IsFalse();
                 await Assert.That(name).IsNotNull();
             }
             finally
@@ -677,13 +679,13 @@ public class FileDownloadTests
     [Test]
     public async Task SafeTarget_resolves_only_inside_the_root()
     {
-        var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "safe-root"));
+        var root = Path.GetFullPath(Path.Join(Path.GetTempPath(), "safe-root"));
 
-        await Assert.That(FileClient.SafeTarget(root, "a/b.txt")).IsEqualTo(Path.Combine(root, "a", "b.txt"));
-        await Assert.That(FileClient.SafeTarget(root, "./c.txt")).IsEqualTo(Path.Combine(root, "c.txt"));
+        await Assert.That(FileClient.SafeTarget(root, "a/b.txt")).IsEqualTo(Path.Join(root, "a", "b.txt"));
+        await Assert.That(FileClient.SafeTarget(root, "./c.txt")).IsEqualTo(Path.Join(root, "c.txt"));
         await Assert.That(FileClient.SafeTarget(root, "./")).IsNull();
         await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, ".")).IsNull();
-        await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, "d.txt")).IsEqualTo(Path.Combine(root, "d.txt"));
+        await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, "d.txt")).IsEqualTo(Path.Join(root, "d.txt"));
         await Assert.That(() => FileClient.SafeTarget(root, "a\0b")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "..")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "x/../../y")).Throws<InvalidDataException>();
@@ -753,7 +755,7 @@ public class FileDownloadTests
         var invoker = new FakeCallInvoker().Stream<Wire.ExecSandboxRequest, Wire.ExecSandboxEvent>("ExecSandbox", _ => Throwing());
         using var client = ClientTests.NewClient(invoker);
 
-        var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", new MemoryStream())).Throws<OpenShellException>();
+        var ex = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", Stream.Null)).Throws<OpenShellException>();
 
         await Assert.That(ex!.IsNotFound).IsTrue();
     }

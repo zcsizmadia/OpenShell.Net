@@ -286,7 +286,7 @@ public class FakeRootfsTests
 {
     private static string Temp()
     {
-        var path = Path.Combine(Path.GetTempPath(), "fake-rootfs-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Join(Path.GetTempPath(), "fake-rootfs-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
         return path;
     }
@@ -319,7 +319,7 @@ public class FakeRootfsTests
         try
         {
             using var client = FakeCoreTests.New();
-            var file = Path.Combine(dir, "root.tar");
+            var file = Path.Join(dir, "root.tar");
             await File.WriteAllBytesAsync(file, new byte[] { 1, 2, 3 });
 
             var token = await client.Rootfs.StageAsync(file);
@@ -343,12 +343,12 @@ public class FakeRootfsTests
         try
         {
             using var client = FakeCoreTests.New(new FakeGatewayOptions { RootfsMaxBytes = 2 });
-            var file = Path.Combine(dir, "big.tar");
+            var file = Path.Join(dir, "big.tar");
             await File.WriteAllBytesAsync(file, new byte[10]);
 
             var ex = await Assert.That(async () => await client.Rootfs.StageAsync(file)).Throws<OpenShellException>();
             await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.InvalidArgument);
-            await Assert.That(async () => await client.Rootfs.StageAsync(Path.Combine(dir, "missing.tar"))).Throws<FileNotFoundException>();
+            await Assert.That(async () => await client.Rootfs.StageAsync(Path.Join(dir, "missing.tar"))).Throws<FileNotFoundException>();
             await Assert.That(async () => await client.Rootfs.StageAsync(" ")).Throws<ArgumentException>();
         }
         finally
@@ -363,7 +363,7 @@ public class FakeRootfsTests
         var dir = Temp();
         try
         {
-            var file = Path.Combine(dir, "grow.tar");
+            var file = Path.Join(dir, "grow.tar");
             await File.WriteAllBytesAsync(file, new byte[10]);
 
             var ex = await Assert.That(async () => await FakeRootfsClient.ReadLimitedAsync(file, 5, CancellationToken.None)).Throws<OpenShellException>();

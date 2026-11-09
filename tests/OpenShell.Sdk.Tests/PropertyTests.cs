@@ -36,7 +36,7 @@ public class PropertyTests
     [Test]
     public Task Gateway_names_are_either_rejected_or_a_single_safe_path_component()
     {
-        var root = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "openshell-property-root"));
+        var root = Path.GetFullPath(Path.Join(Path.GetTempPath(), "openshell-property-root"));
 
         NameLike.Sample(name =>
         {
@@ -57,7 +57,7 @@ public class PropertyTests
                 || (stem.Length == 4 && (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) && char.IsAsciiDigit(stem[3]));
             Require(!device, $"accepted the device name '{name}'");
 
-            var full = Path.GetFullPath(Path.Combine(root, name));
+            var full = Path.GetFullPath(Path.Join(root, name));
             Require(string.Equals(Path.GetDirectoryName(full), root, StringComparison.Ordinal), $"'{name}' escapes the gateway directory");
         });
 
@@ -148,7 +148,7 @@ public class PropertyTests
                 Require(stored.Issuer == issuer && stored.ClientId == clientId && stored.IsFor(issuer, clientId), "issuer or client id did not round-trip");
             }, iter: 200, threads: 1);
 
-        var path = Path.Combine(dir.Path, OidcTokenFile.FileName);
+        var path = Path.Join(dir.Path, OidcTokenFile.FileName);
         Gen.OneOf(Gen.String, Gen.String[Gen.Char["{}[]\":,0123456789.-eE ntrufals_abcikx"], 0, 40]).Sample(content =>
         {
             File.WriteAllText(path, content);

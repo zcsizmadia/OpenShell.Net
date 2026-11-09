@@ -16,7 +16,6 @@ internal static class Poll
         where T : class
     {
         var deadline = DateTime.UtcNow + timeout;
-        var observed = "nothing";
         while (true)
         {
             var (value, last) = await probe();
@@ -25,10 +24,9 @@ internal static class Poll
                 return value;
             }
 
-            observed = last;
             if (DateTime.UtcNow >= deadline)
             {
-                throw new TimeoutException($"timed out after {timeout.TotalSeconds:0}s waiting for {what}; last observed: {observed}");
+                throw new TimeoutException($"timed out after {timeout.TotalSeconds:0}s waiting for {what}; last observed: {last}");
             }
 
             await Task.Delay(Interval, cancellationToken);

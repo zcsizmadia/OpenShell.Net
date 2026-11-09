@@ -55,7 +55,7 @@ public class GatewayEdgeTunnelTests
     public async Task Cloudflare_gateway_is_reached_through_a_local_tunnel_with_the_edge_token()
     {
         using var dir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "edge_token"), "edge.jwt-1");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "edge_token"), "edge.jwt-1");
         var (connector, seen) = FailingConnector();
 
         var (client, tunnel) = GatewayClient.ConnectCore(Config(dir.Path), Options(connector));
@@ -78,7 +78,7 @@ public class GatewayEdgeTunnelTests
     public async Task Disposing_the_client_stops_the_tunnel_it_owns()
     {
         using var dir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "edge_token"), "tok");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "edge_token"), "tok");
         var (connector, _) = FailingConnector();
 
         var (client, tunnel) = GatewayClient.ConnectCore(Config(dir.Path), Options(connector));
@@ -94,7 +94,7 @@ public class GatewayEdgeTunnelTests
     public async Task Never_mode_connects_directly_without_a_tunnel()
     {
         using var dir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "edge_token"), "tok");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "edge_token"), "tok");
 
         var (client, tunnel) = GatewayClient.ConnectCore(Config(dir.Path), Options(mode: EdgeTunnelMode.Never));
         using (client)
@@ -144,7 +144,7 @@ public class GatewayEdgeTunnelTests
     {
         using var root = new TempDirectory();
         var gatewayDir = GatewayLocatorTests.Register(root, "user", "edge", """{"gateway_endpoint":"https://127.0.0.1:9","auth_mode":"cloudflare_jwt"}""");
-        await File.WriteAllTextAsync(Path.Combine(gatewayDir, "edge_token"), "tok");
+        await File.WriteAllTextAsync(Path.Join(gatewayDir, "edge_token"), "tok");
         var (connector, seen) = FailingConnector();
         var locator = new GatewayLocator(new GatewayLocatorOptions { UserConfigDirectory = root.Combine("user"), SystemConfigDirectory = root.Combine("sys") });
 
@@ -158,7 +158,7 @@ public class GatewayEdgeTunnelTests
     public async Task Default_tunnel_options_are_built_when_none_are_given()
     {
         using var dir = new TempDirectory();
-        await File.WriteAllTextAsync(Path.Combine(dir.Path, "edge_token"), "tok");
+        await File.WriteAllTextAsync(Path.Join(dir.Path, "edge_token"), "tok");
 
         var (client, tunnel) = GatewayClient.ConnectCore(Config(dir.Path), new GatewayConnectOptions());
         using (client)

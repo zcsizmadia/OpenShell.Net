@@ -32,7 +32,7 @@ internal static class FakeTestHelpers
 
     public static string TempDirectory()
     {
-        var path = Path.Combine(Path.GetTempPath(), "fake-client-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Join(Path.GetTempPath(), "fake-client-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(path);
         return path;
     }
@@ -370,12 +370,12 @@ public class FakeFileTests
         try
         {
             using var client = await FakeTestHelpers.ClientWithSandboxAsync();
-            var local = Path.Combine(dir, "in.txt");
+            var local = Path.Join(dir, "in.txt");
             await File.WriteAllTextAsync(local, "hello");
 
             await client.Files.UploadAsync("a", local, "/work/in.txt");
             await client.Files.UploadAsync("a", new MemoryStream(Encoding.UTF8.GetBytes("streamed")), "/work/stream.txt");
-            var downloaded = Path.Combine(dir, "nested", "out.txt");
+            var downloaded = Path.Join(dir, "nested", "out.txt");
             await client.Files.DownloadAsync("a", "/work/in.txt", downloaded);
             using var buffer = new MemoryStream();
             await client.Files.DownloadAsync("a", "/work/stream.txt", buffer);
@@ -398,21 +398,21 @@ public class FakeFileTests
         try
         {
             using var client = await FakeTestHelpers.ClientWithSandboxAsync();
-            var source = Path.Combine(dir, "src");
-            Directory.CreateDirectory(Path.Combine(source, "sub"));
-            await File.WriteAllTextAsync(Path.Combine(source, "a.txt"), "A");
-            await File.WriteAllTextAsync(Path.Combine(source, "sub", "b.txt"), "B");
-            Directory.CreateDirectory(Path.Combine(dir, "empty"));
+            var source = Path.Join(dir, "src");
+            Directory.CreateDirectory(Path.Join(source, "sub"));
+            await File.WriteAllTextAsync(Path.Join(source, "a.txt"), "A");
+            await File.WriteAllTextAsync(Path.Join(source, "sub", "b.txt"), "B");
+            Directory.CreateDirectory(Path.Join(dir, "empty"));
 
             await client.Files.UploadDirectoryAsync("a", source, "/data/");
-            await client.Files.UploadDirectoryAsync("a", Path.Combine(dir, "empty"), "/nothing");
-            var target = Path.Combine(dir, "dst");
+            await client.Files.UploadDirectoryAsync("a", Path.Join(dir, "empty"), "/nothing");
+            var target = Path.Join(dir, "dst");
             await client.Files.DownloadDirectoryAsync("a", "/data", target);
-            var emptyTarget = Path.Combine(dir, "empty-dst");
+            var emptyTarget = Path.Join(dir, "empty-dst");
             await client.Files.DownloadDirectoryAsync("a", "/nothing", emptyTarget);
 
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "a.txt"))).IsEqualTo("A");
-            await Assert.That(await File.ReadAllTextAsync(Path.Combine(target, "sub", "b.txt"))).IsEqualTo("B");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(target, "a.txt"))).IsEqualTo("A");
+            await Assert.That(await File.ReadAllTextAsync(Path.Join(target, "sub", "b.txt"))).IsEqualTo("B");
             await Assert.That(client.Gateway.ListFiles("a")).IsEquivalentTo(new[] { "/data/a.txt", "/data/sub/b.txt" });
             await Assert.That(Directory.Exists(emptyTarget)).IsTrue();
         }
@@ -430,10 +430,10 @@ public class FakeFileTests
         {
             using var client = await FakeTestHelpers.ClientWithSandboxAsync();
 
-            await Assert.That(async () => await client.Files.DownloadAsync("a", "/missing", Path.Combine(dir, "x"))).Throws<InvalidDataException>();
-            await Assert.That(async () => await client.Files.DownloadAsync("a", "/missing", new MemoryStream())).Throws<InvalidDataException>();
-            await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/missing", Path.Combine(dir, "d"))).Throws<InvalidDataException>();
-            await Assert.That(async () => await client.Files.DownloadAsync("nope", "/x", Path.Combine(dir, "x"))).Throws<OpenShellException>();
+            await Assert.That(async () => await client.Files.DownloadAsync("a", "/missing", Path.Join(dir, "x"))).Throws<InvalidDataException>();
+            await Assert.That(async () => await client.Files.DownloadAsync("a", "/missing", Stream.Null)).Throws<InvalidDataException>();
+            await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/missing", Path.Join(dir, "d"))).Throws<InvalidDataException>();
+            await Assert.That(async () => await client.Files.DownloadAsync("nope", "/x", Path.Join(dir, "x"))).Throws<OpenShellException>();
         }
         finally
         {
@@ -450,8 +450,8 @@ public class FakeFileTests
             using var client = await FakeTestHelpers.ClientWithSandboxAsync();
             client.Gateway.PutFile("a", "/data/../escape.txt", new byte[] { 1 });
 
-            await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/data", Path.Combine(dir, "d"))).Throws<InvalidDataException>();
-            await Assert.That(File.Exists(Path.Combine(dir, "escape.txt"))).IsFalse();
+            await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/data", Path.Join(dir, "d"))).Throws<InvalidDataException>();
+            await Assert.That(File.Exists(Path.Join(dir, "escape.txt"))).IsFalse();
         }
         finally
         {
@@ -466,13 +466,13 @@ public class FakeFileTests
         try
         {
             using var client = await FakeTestHelpers.ClientWithSandboxAsync();
-            var file = Path.Combine(dir, "f.txt");
+            var file = Path.Join(dir, "f.txt");
             await File.WriteAllTextAsync(file, "x");
 
             await Assert.That(async () => await client.Files.UploadAsync(" ", file, "/x")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadAsync("a", " ", "/x")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadAsync("a", dir, "/x")).Throws<ArgumentException>();
-            await Assert.That(async () => await client.Files.UploadAsync("a", Path.Combine(dir, "nope"), "/x")).Throws<FileNotFoundException>();
+            await Assert.That(async () => await client.Files.UploadAsync("a", Path.Join(dir, "nope"), "/x")).Throws<FileNotFoundException>();
             await Assert.That(async () => await client.Files.UploadAsync("a", file, "/dir/")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadAsync("a", file, "/x\0")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadAsync(" ", new MemoryStream(), "/x")).Throws<ArgumentException>();
@@ -481,11 +481,11 @@ public class FakeFileTests
             await Assert.That(async () => await client.Files.UploadDirectoryAsync(" ", dir, "/x")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadDirectoryAsync("a", " ", "/x")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.UploadDirectoryAsync("a", dir, "/x\0")).Throws<ArgumentException>();
-            await Assert.That(async () => await client.Files.UploadDirectoryAsync("a", Path.Combine(dir, "nope"), "/x")).Throws<DirectoryNotFoundException>();
+            await Assert.That(async () => await client.Files.UploadDirectoryAsync("a", Path.Join(dir, "nope"), "/x")).Throws<DirectoryNotFoundException>();
             await Assert.That(async () => await client.Files.DownloadAsync(" ", "/x", file)).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.DownloadAsync("a", "/x", " ")).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.DownloadAsync("a", "/dir/", file)).Throws<ArgumentException>();
-            await Assert.That(async () => await client.Files.DownloadAsync(" ", "/x", new MemoryStream())).Throws<ArgumentException>();
+            await Assert.That(async () => await client.Files.DownloadAsync(" ", "/x", Stream.Null)).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.DownloadAsync("a", "/x", (Stream)null!)).Throws<ArgumentNullException>();
             await Assert.That(async () => await client.Files.DownloadDirectoryAsync(" ", "/x", dir)).Throws<ArgumentException>();
             await Assert.That(async () => await client.Files.DownloadDirectoryAsync("a", "/x", " ")).Throws<ArgumentException>();
