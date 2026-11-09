@@ -58,6 +58,10 @@ internal sealed class SandboxEntry
     /// <summary>The current <c>Starting</c> phase comes from a resume, so repeating the resume is idempotent.</summary>
     public bool Resuming { get; set; }
 
+    public IReadOnlyList<EndpointStatus> EndpointStatuses { get; set; } = [];
+
+    public TokenGrantFailureObservation? LastTokenGrantFailure { get; set; }
+
     public int? ExitCode { get; set; }
 
     public int RestartCount { get; set; }

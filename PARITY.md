@@ -35,6 +35,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Sandbox suspend and resume | `SuspendAsync`, `ResumeAsync` (`RestartIfRestoreFails`), `WaitSuspendedAsync`; Ready and Stopped waits fail fast on a suspended sandbox (v0.1.7) | G P | ✅ |
 | Sandbox configuration update | `SandboxUpdates.UpdateSandbox` (v0.1.7) | | ⬜ raw only |
 | Sandbox waits | `WaitReadyAsync`, `WaitStoppedAsync`, `WaitDeletedAsync` with `ExpectedSandboxId` | G R T P | ✅ |
+| Endpoint statuses and token-grant failure diagnostics (`Sandbox.EndpointStatuses`, `LastTokenGrantFailure`, `EndpointFailure`) | G | ✅ |
 | Sandbox watch and logs | `WatchAsync`, `WatchLogsAsync`, `GetLogsAsync`, cursor resume, reconnect with backoff | G R | ✅ |
 | Sandbox providers | attach, detach, list, status, readiness waits (`WaitAsync`, `WaitAllAsync`) | G R T | ✅ |
 | Templates | create, get, list, delete | G R T P | ✅ |

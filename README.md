@@ -91,6 +91,10 @@ await client.Sandboxes.WaitReadyAsync("sdk-example");      // -> Ready
 
 Repeating a suspend while suspending or suspended, or a resume while it is starting, is safe. `ResumeSandboxOptions.RestartIfRestoreFails` boots the workload cleanly when the memory state cannot be restored, instead of failing. `StopAsync` and `StartAsync` also work on a suspended sandbox, but they discard the retained state. `WaitReadyAsync` and `WaitStoppedAsync` fail fast on a suspended sandbox instead of waiting for a phase it will not reach on its own.
 
+### Endpoint status
+
+`Sandbox.EndpointStatuses` reports what the sandbox supervisor last observed for each declared endpoint: host, ports, path, the latest `EndpointResult`, and when it was reported. When a gateway-managed token grant fails, `EndpointStatus.LastFailure` and `Sandbox.LastTokenGrantFailure` carry the classified cause: a stable `Code` and `Stage` (lower_snake_case), the `RecoveryAction` to take, the provider and credential key, the upstream HTTP status, and the `x-openshell-request-id` the workload saw, for correlating with gateway logs. In tests, `FakeGateway.ReportEndpointStatuses` sets them.
+
 ## Connect and authenticate
 
 `Auth` builds the authentication providers:
