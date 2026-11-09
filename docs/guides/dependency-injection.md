@@ -24,21 +24,21 @@ dotnet add package OpenShell.Net.DependencyInjection
 | `Address` | The gateway URL. Required. |
 | `Workspace` | The default workspace (`default`). |
 | `Token` | A static bearer token. Keep it in user secrets, environment variables, or a vault, not in the JSON file. |
-| `CaCertificatePath` | A PEM file of CA certificates that the gateway certificate must chain to. |
+| `CaCertificatePath` | A PEM file of CA certificates that the gateway certificate must chain to, instead of the system roots. |
 | `ClientCertificatePath`, `ClientKeyPath` | A PEM client certificate and key for mTLS. |
 | `InsecureSkipVerify` | Skip server certificate validation (development only). |
 | `AllowInsecureAuth` | Allow credentials over plaintext HTTP to a non-loopback host. |
-| `DefaultTimeout` | Deadline for unary calls, as a `TimeSpan` (`00:00:30`). |
+| `DefaultTimeout` | Deadline for unary calls, as a `TimeSpan` (`00:00:30`). Streaming calls such as exec, file transfers, watches, and forwards are not bounded by it; see [Retries and timeouts](retries.md#timeouts). |
 | `Retry` | `MaxAttempts`, `InitialBackoff`, `MaxBackoff`, `BackoffMultiplier`, `Jitter`, `RetryableStatusCodes`; unset values keep the defaults. |
 | `RouteToOwnerReplica` | [Owner routing](multi-replica.md) (`true`). |
 
-The client is created on first use and disposed with the container. `services.AddHealthChecks().AddOpenShellHealthCheck()` adds a health check that calls the gateway health RPC; pass `gatewayName` to check a named registration.
+The client is created on first use and disposed with the container. Only a client that was built successfully is kept: when the build fails, for example because a certificate file is not there yet, that caller gets the error and the next resolution tries again. Concurrent first resolutions share one client per name. `services.AddHealthChecks().AddOpenShellHealthCheck()` adds a health check that calls the gateway health RPC; pass `gatewayName` to check a named registration.
 
 ## Configure in code
 
 [!code-csharp[](../snippets/DependencyInjection.cs#InCode)]
 
-`OpenShellOptions.Auth` and `OpenShellOptions.Tls` take any <xref:OpenShell.IAuthProvider> or <xref:OpenShell.TlsOptions> and win over `Token` and the certificate paths. The `AddOpenShell(name, (provider, options) => ...)` overload configures them from other services.
+`OpenShellOptions.Auth` and `OpenShellOptions.Tls` take any <xref:OpenShell.IAuthProvider> or <xref:OpenShell.TlsOptions> and win over `Token` and the certificate paths. The `AddOpenShell(name, (provider, options) => ...)` overload configures them from other services. The client does not dispose an auth provider you supply, so register a disposable one, such as <xref:OpenShell.Oidc.ClientCredentialsAuth>, as a container singleton, or dispose it yourself.
 
 ## The fluent builder
 

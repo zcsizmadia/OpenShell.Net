@@ -43,3 +43,5 @@
       href: raw-grpc.md
     - name: Versioning
       href: versioning.md
+    - name: Feature parity
+      href: parity.md

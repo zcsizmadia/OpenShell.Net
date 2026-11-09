@@ -45,7 +45,7 @@ exit 0: hello from OpenShell
 ## What happened
 
 1. <xref:OpenShell.ISandboxClient.CreateAsync*> asked the gateway for a sandbox and returned as soon as the gateway accepted it, in the `Provisioning` phase.
-2. <xref:OpenShell.ISandboxClient.WaitReadyAsync*> polled the sandbox, with backoff, until it reached `Ready`. A sandbox that enters `Error` or stops fails the wait at once; running out of time throws an `OpenShellException` whose `Kind` is `DeadlineExceeded`.
+2. <xref:OpenShell.ISandboxClient.WaitReadyAsync*> polled the sandbox, with backoff, until it reached `Ready`. A sandbox that enters `Error`, stops, or is suspended fails the wait at once with an `OpenShellException` whose `Kind` is `Conflict`; running out of time throws one whose `Kind` is `DeadlineExceeded`. Either way the `finally` block still deletes the sandbox.
 3. <xref:OpenShell.IExecClient.RunAsync*> ran the command (an argument list, not a shell string) and buffered its output into an <xref:OpenShell.ExecResult>: `ExitCode`, `StdoutText`, `StderrText`. A non-zero exit code is a result, not an exception.
 4. <xref:OpenShell.ISandboxClient.DeleteAsync*> returned a typed <xref:OpenShell.DeletionResult>. `Accepted` means the gateway is still cleaning up, so the program waits with <xref:OpenShell.ISandboxClient.WaitDeletedAsync*>; `ExpectedSandboxId` keeps a new sandbox with the same name from extending the wait.
 

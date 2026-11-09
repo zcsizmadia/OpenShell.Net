@@ -14,8 +14,11 @@ SPDX-License-Identifier: Apache-2.0
 - Uploads create the remote parent directories. A remote file path must name a file, not end with `/`.
 - A non-seekable upload stream is buffered in memory first, because the tar header needs the size up front. Uploaded stream files default to mode `0644` unless you pass one.
 - `DownloadAsync` to a path writes a temporary file next to the target and replaces the target only on success.
-- `DownloadDirectoryAsync` refuses archive entries that would land outside the target directory, and links.
-- A failing remote `tar` during an upload throws <xref:OpenShell.OpenShellException> with its exit code and error output; a download whose archive is truncated, empty, or unexpected throws `InvalidDataException`.
+- `DownloadDirectoryAsync` refuses, with `InvalidDataException`, archive entries that would land outside the target directory, and links. On Windows it also refuses entry names that Windows would not store as given: a path segment that contains `:` (an NTFS alternate data stream) or another character Windows forbids (`< > " | ? *`, control characters), that ends in a dot or a space, or that is a reserved device name such as `CON`, `NUL`, `COM1` or `LPT1`, with or without an extension.
+- A remote `tar` that fails during an upload throws <xref:OpenShell.OpenShellException> with `Kind` `Internal`, its exit code, and its error output, also when it exits before reading all of the input (for example because it cannot create the target directory).
+- A remote command that fails during a download, for example because the remote path does not exist, throws <xref:OpenShell.OpenShellException> with `Kind` `Internal` and the message `remote command exited with code …`, followed by its error output; it is not `NotFound`. A download whose archive is truncated, empty, or unexpected, or that holds an entry the download refuses, throws `InvalidDataException`.
+- A missing local source throws `FileNotFoundException` (`UploadAsync`) or `DirectoryNotFoundException` (`UploadDirectoryAsync`).
+- Transfers are streaming calls, so `DefaultTimeout` does not bound them; pass a `CancellationToken` (see [Retries and timeouts](retries.md#timeouts)).
 
 ## Rootfs staging
 

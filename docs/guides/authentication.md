@@ -31,13 +31,15 @@ A token your application caches and renews elsewhere: <xref:OpenShell.Auth.Beare
 
 [!code-csharp[](../snippets/Authentication.cs#BearerTokenSource)]
 
-<xref:OpenShell.RefreshableToken> does the caching for you. It calls your <xref:OpenShell.TokenRefresher> shortly before the token expires (the `leeway`, one minute here), lets only one renewal run at a time, and renews once more when the gateway rejects a call with `Unauthenticated`; the client then repeats that call once. A failed renewal surfaces its error instead of serving an expired token.
+<xref:OpenShell.RefreshableToken> does the caching for you. It calls your <xref:OpenShell.TokenRefresher> shortly before the token expires (the `leeway`, one minute here), lets only one renewal run at a time, and renews once more when the gateway rejects a call with `Unauthenticated`; the client then repeats that call once. A failed renewal surfaces its error instead of serving an expired token. A streaming call is repeated only while it has received nothing; see [Expired credentials](retries.md#expired-credentials).
 
 [!code-csharp[](../snippets/Authentication.cs#RefreshableToken)]
 
+The client never disposes its auth provider. `RefreshableToken` and <xref:OpenShell.Oidc.ClientCredentialsAuth> are `IDisposable` and belong to the code that created them: dispose them after the clients that use them, as these snippets do with `using`. In a DI container, `WithClientCredentials` registers the provider as a singleton, so the container disposes it.
+
 ## OIDC
 
-The `OpenShell.Oidc` namespace implements the flows the OpenShell CLI uses. Every flow discovers the issuer (`/.well-known/openid-configuration`) and validates it, keeps secrets and tokens in memory, and never logs them: <xref:OpenShell.Oidc.OidcOptions> and <xref:OpenShell.Oidc.OidcTokens> print no secrets from `ToString`.
+The `OpenShell.Oidc` namespace implements the flows the OpenShell CLI uses. Every flow discovers the issuer (`/.well-known/openid-configuration`) and validates it, keeps secrets and tokens in memory, and never logs them. The types that carry them print no secret from `ToString`: <xref:OpenShell.Oidc.OidcOptions>, <xref:OpenShell.Oidc.OidcTokens>, and <xref:OpenShell.AccessToken> (`AccessToken { ... }`).
 
 ### Services: client credentials
 
@@ -49,11 +51,13 @@ For long-running automation, <xref:OpenShell.Oidc.ClientCredentialsAuth> exchang
 
 ### Users: browser login
 
-<xref:OpenShell.Oidc.OidcLogin.LoginAsync*?displayProperty=nameWithType> runs the authorization-code flow, with PKCE when the issuer advertises it. It opens the system browser and receives the code on a loopback port (`CallbackPort`, or 8000 then 18000 when it is 0), and falls back to a paste-the-code flow when no port is free; set `UseKeyboardFlow` to use the paste flow directly. Interactive flows request `openid profile email` unless you set `Scopes`.
+<xref:OpenShell.Oidc.OidcLogin.LoginAsync*?displayProperty=nameWithType> runs the authorization-code flow, with PKCE when the issuer advertises it. It opens the system browser and receives the code on a loopback port (`CallbackPort`, or 8000 then 18000 when it is 0), and falls back to a paste-the-code flow when no port is free. The redirect URI is `http://localhost:<port>/callback`, as in the OpenShell Go SDK, so register that with your identity provider; the callback listens on both `127.0.0.1` and, where IPv6 is available, `[::1]`, so it works whichever address the browser resolves `localhost` to (a port is used when it is free on `127.0.0.1`). Set `UseKeyboardFlow` to use the paste flow directly. Interactive flows request `openid profile email` unless you set `Scopes`.
 
 [!code-csharp[](../snippets/Authentication.cs#BrowserLogin)]
 
-With a token cache directory (`TokenCacheDirectory`, or the registered gateway's directory when `Gateway` is set), a still-valid cached token issued for the same issuer and client id is returned without a prompt, and new tokens are written to `oidc_token.json` there. Set `InMemory` to skip the cache.
+With a token cache directory (`TokenCacheDirectory`, or the registered gateway's directory when `Gateway` is set), a still-valid cached token issued for the same issuer and client id is returned without a prompt, and new tokens are written to `oidc_token.json` there. A cache file that cannot be read is ignored and a new login runs; a failure to write the new tokens throws <xref:OpenShell.Oidc.OidcException> (`TokenPersist`). Set `InMemory` to skip the cache. Only `LoginAsync` uses the cache: `DeviceLoginAsync`, `RefreshAsync`, and `ClientCredentialsAsync` neither read nor write it.
+
+The file is written atomically: the tokens go to a temporary file in the same directory, which then replaces `oidc_token.json`. On Linux and macOS the file is created with owner-only permissions (`0600`); on Windows no explicit ACL is set, so it inherits the permissions of its directory.
 
 ### Users without a browser: device code
 
@@ -67,7 +71,7 @@ Set `OidcOptions.Gateway` to a registration loaded with <xref:OpenShell.Gateway.
 
 [!code-csharp[](../snippets/Authentication.cs#GatewayLogin)]
 
-`oidc_token.json` holds `access_token`, `refresh_token`, `expires_at` (Unix seconds), `issuer`, and `client_id`. A token issued for another issuer or client id is never sent.
+`oidc_token.json` holds `access_token`, `refresh_token`, `expires_at` (Unix seconds), `issuer`, and `client_id`. When the registration names an issuer and a client id, a token whose file records another issuer or client id, or records neither, is never sent. When the registration names no issuer or no client id, there is nothing to check against, and <xref:OpenShell.Gateway.GatewayClient> sends the stored token as it is (but cannot renew it). See [The token file](gateway-discovery.md#the-token-file) for how a connected client renews and writes back the token.
 
 ### Errors
 
@@ -78,6 +82,8 @@ OIDC failures throw <xref:OpenShell.Oidc.OidcException>, an `OpenShellException`
 The default local gateway requires a client certificate. Pass it, and a private CA when the gateway certificate is not signed by a public one, through <xref:OpenShell.TlsOptions>:
 
 [!code-csharp[](../snippets/Authentication.cs#MutualTls)]
+
+With `CaCertificates` set, only those certificates are trusted: the gateway certificate must chain to one of them, and the system roots are not used. Intermediate certificates that the server sends during the handshake may complete the chain, so a gateway whose certificate is issued by an intermediate CA validates when you pin only the root; trust still comes only from the pinned certificates, never from one the server sent. The host name must match. Without `CaCertificates`, the system roots are used.
 
 A registered `mtls` gateway loads `mtls/ca.crt`, `mtls/tls.crt`, and `mtls/tls.key` from its credentials directory automatically.
 

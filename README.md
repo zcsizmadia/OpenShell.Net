@@ -31,6 +31,10 @@ The package version is the NVIDIA OpenShell release the SDK is built from, with 
 
 So `OpenShell.Net 0.1.7.x` pairs with an OpenShell 0.1.7 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the release notes say so. The assembly metadata `OpenShellUpstreamRelease` records the release at run time.
 
+## Parity
+
+Built from NVIDIA OpenShell v0.1.7, the client covers all 67 user-facing gateway RPCs plus the `SandboxUpdates` service, and targets the union of the Go, Rust, TypeScript, and Python SDKs. It is integration-tested against a real v0.1.7 gateway in CI. See the [feature parity summary](https://zcsizmadia.github.io/OpenShell.Net/guides/parity.html) and [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) for details.
+
 ## Install
 
 The packages are published to [nuget.org](https://www.nuget.org/packages/OpenShell.Net):
@@ -67,19 +71,25 @@ var sandbox = await client.Sandboxes.CreateAsync(
     "sdk-example",
     new SandboxSpec { Image = "registry.example.com/team/python-agent:1.0" });
 
-await client.Sandboxes.WaitReadyAsync(sandbox.Name, new WaitOptions { Timeout = TimeSpan.FromMinutes(2) });
-
-var result = await client.Exec.RunAsync(
-    sandbox.Name,
-    ["python", "-c", "print('hello from OpenShell')"]);
-Console.WriteLine(result.StdoutText);
-
-var deletion = await client.Sandboxes.DeleteAsync(sandbox.Name);
-if (deletion.Outcome == DeletionOutcome.Accepted)
+try
 {
-    await client.Sandboxes.WaitDeletedAsync(
+    await client.Sandboxes.WaitReadyAsync(sandbox.Name, new WaitOptions { Timeout = TimeSpan.FromMinutes(2) });
+
+    var result = await client.Exec.RunAsync(
         sandbox.Name,
-        new WaitOptions { ExpectedSandboxId = deletion.ResourceId });
+        ["python", "-c", "print('hello from OpenShell')"]);
+    Console.WriteLine(result.StdoutText);
+}
+finally
+{
+    // Delete the sandbox even when the wait or the command throws.
+    var deletion = await client.Sandboxes.DeleteAsync(sandbox.Name);
+    if (deletion.Outcome == DeletionOutcome.Accepted)
+    {
+        await client.Sandboxes.WaitDeletedAsync(
+            sandbox.Name,
+            new WaitOptions { ExpectedSandboxId = deletion.ResourceId });
+    }
 }
 ```
 

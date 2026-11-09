@@ -10,9 +10,15 @@ public enum OpenShellErrorKind
 {
     /// <summary>The client was configured inconsistently or unsafely.</summary>
     InvalidConfig,
-    /// <summary>The TLS handshake or certificate validation failed.</summary>
+    /// <summary>
+    /// TLS material could not be loaded, for example a registered gateway's mTLS bundle. A TLS handshake or
+    /// certificate validation that fails during a call surfaces as <see cref="Unavailable"/>.
+    /// </summary>
     Tls,
-    /// <summary>The gateway could not be reached.</summary>
+    /// <summary>
+    /// Reserved; the SDK does not currently raise it. A gateway that cannot be reached, and a connection or TLS
+    /// handshake that fails, surface as <see cref="Unavailable"/>.
+    /// </summary>
     Connect,
     /// <summary>Credentials could not be obtained or refreshed.</summary>
     Auth,
