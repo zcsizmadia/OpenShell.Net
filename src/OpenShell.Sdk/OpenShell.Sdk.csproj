@@ -1,14 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
     SPDX-License-Identifier: Apache-2.0
   -->
   <PropertyGroup>
     <TargetFrameworks>$(OpenShellSdkTargetFrameworks)</TargetFrameworks>
     <RootNamespace>OpenShell</RootNamespace>
     <AssemblyName>OpenShell.Sdk</AssemblyName>
-    <PackageId>OpenShell.Sdk</PackageId>
-    <Description>.NET client for the OpenShell gateway.</Description>
+    <PackageId>OpenShell.Net</PackageId>
+    <Description>Unofficial community .NET (C#) SDK for NVIDIA OpenShell: an async client for the OpenShell gateway. Not affiliated with or endorsed by NVIDIA.</Description>
+    <PackageTags>openshell;nvidia-openshell;sdk;grpc;sandbox;ai-agents</PackageTags>
     <IsAotCompatible>true</IsAotCompatible>
     <InternalsVisibleToTests>OpenShell.Sdk.Tests</InternalsVisibleToTests>
   </PropertyGroup>
@@ -22,9 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Proto sources live in the repository root proto/ directory; bindings are generated at build time and never committed. -->
-    <Protobuf Include="..\..\..\..\proto\openshell.proto;..\..\..\..\proto\sandbox.proto;..\..\..\..\proto\datamodel.proto;..\..\..\..\proto\options.proto"
-              ProtoRoot="..\..\..\..\proto" GrpcServices="Client" Access="Public" Link="Proto\%(Filename)%(Extension)" />
+    <!-- Proto sources are vendored from NVIDIA/OpenShell into the repository root proto/ directory (release in UPSTREAM_VERSION, synced by scripts/sync-upstream.sh); bindings are generated at build time and never committed. -->
+    <Protobuf Include="..\..\proto\openshell.proto;..\..\proto\sandbox.proto;..\..\proto\datamodel.proto;..\..\proto\options.proto"
+              ProtoRoot="..\..\proto" GrpcServices="Client" Access="Public" Link="Proto\%(Filename)%(Extension)" />
     <InternalsVisibleTo Include="$(InternalsVisibleToTests)" />
     <InternalsVisibleTo Include="OpenShell.Sdk.DependencyInjection.Tests" />
     <InternalsVisibleTo Include="OpenShell.Sdk.Testing" />

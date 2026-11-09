@@ -1,15 +1,14 @@
 <Project>
   <!--
-    SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
     SPDX-License-Identifier: Apache-2.0
   -->
   <PropertyGroup Label="Target frameworks">
     <!--
       The only place that lists target frameworks. Add net11.0 or drop net8.0 here and every project follows.
-      Also update: the setup-dotnet versions in .github/workflows/branch-checks.yml and release-tag.yml, and
-      the SDK pin in global.json. The tasks in tasks/dotnet.toml read this property, so they need no edit.
+      Also update: the dotnet-version list in .github/workflows/ci.yml and release.yml, and the SDK pin in
+      global.json.
     -->
-    <!-- TEMPORARY: net11.0 is here to surface new analyzer warnings early. Remove it, and restore the global.json rollForward to latestFeature with allowPrerelease false, before the pull request if .NET 11 is not GA. -->
     <OpenShellSdkTargetFrameworks>net8.0;net10.0;net11.0</OpenShellSdkTargetFrameworks>
   </PropertyGroup>
   <PropertyGroup>

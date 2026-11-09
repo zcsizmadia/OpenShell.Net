@@ -1,14 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+    SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
     SPDX-License-Identifier: Apache-2.0
   -->
   <PropertyGroup>
     <TargetFrameworks>$(OpenShellSdkTargetFrameworks)</TargetFrameworks>
     <RootNamespace>OpenShell.Testing</RootNamespace>
     <AssemblyName>OpenShell.Sdk.Testing</AssemblyName>
-    <PackageId>OpenShell.Sdk.Testing</PackageId>
-    <Description>In-memory fake of the OpenShell gateway client, for unit-testing code that uses OpenShell.Sdk.</Description>
+    <PackageId>OpenShell.Net.Testing</PackageId>
+    <Description>In-memory fake of the OpenShell gateway client, for unit-testing code that uses OpenShell.Net, the unofficial .NET SDK for NVIDIA OpenShell.</Description>
+    <PackageTags>openshell;nvidia-openshell;testing;fake</PackageTags>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

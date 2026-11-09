@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Net;
@@ -59,7 +59,7 @@ internal sealed class ConformanceFixture
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var candidate = Path.Combine(dir.FullName, "sdk", "conformance", "oauth-client-credentials.json");
+            var candidate = Path.Combine(dir.FullName, "conformance", "oauth-client-credentials.json");
             if (File.Exists(candidate))
             {
 #if NET10_0_OR_GREATER
@@ -73,7 +73,7 @@ internal sealed class ConformanceFixture
             dir = dir.Parent;
         }
 
-        throw new FileNotFoundException("sdk/conformance/oauth-client-credentials.json not found above " + AppContext.BaseDirectory);
+        throw new FileNotFoundException("conformance/oauth-client-credentials.json not found above " + AppContext.BaseDirectory);
     }
 
     public string Str(string section, string name) => Root.GetProperty(section).GetProperty(name).GetString()!;

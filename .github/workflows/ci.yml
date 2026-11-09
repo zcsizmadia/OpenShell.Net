@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # One runtime per target framework in Directory.Build.props (OpenShellSdkTargetFrameworks);
+      # the newest SDK in the list builds everything.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
+
+      # Format, build, unit tests on every framework, coverage summary, and a pack dry run that
+      # stamps a CI prerelease version (also validating the version format and package metadata).
+      - name: Check
+        env:
+          VERSION: 0.0.0-ci.${{ github.run_number }}
+        run: scripts/ci.sh all
+
+      - name: Upload packages
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: artifacts/*.nupkg
+          retention-days: 7
+
+  upstream:
+    name: Upstream drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Informational: reports when NVIDIA/OpenShell has a newer release than the vendored protos
+      # and fixtures. The weekly upstream-sync workflow opens the update pull request.
+      - name: Compare UPSTREAM_VERSION with the latest NVIDIA/OpenShell release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if ! scripts/sync-upstream.sh --check; then
+            echo "::warning title=Upstream drift::$(cat UPSTREAM_VERSION | tr -d '\n') is behind the latest NVIDIA/OpenShell release ($(scripts/sync-upstream.sh --latest)). Run scripts/sync-upstream.sh or the upstream-sync workflow."
+          fi
