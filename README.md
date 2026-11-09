@@ -5,6 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 # OpenShell.Net: .NET (C#) SDK for NVIDIA OpenShell
 
+[![CI](https://github.com/zcsizmadia/OpenShell.Net/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zcsizmadia/OpenShell.Net/actions/workflows/ci.yml)
+[![Integration](https://github.com/zcsizmadia/OpenShell.Net/actions/workflows/integration.yml/badge.svg?branch=main)](https://github.com/zcsizmadia/OpenShell.Net/actions/workflows/integration.yml)
+[![NuGet](https://img.shields.io/nuget/v/OpenShell.Net?logo=nuget&label=NuGet)](https://www.nuget.org/packages/OpenShell.Net)
+[![Release](https://img.shields.io/github/v/release/zcsizmadia/OpenShell.Net?include_prereleases&sort=semver&label=release)](https://github.com/zcsizmadia/OpenShell.Net/releases)
+[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![NVIDIA OpenShell](https://img.shields.io/badge/NVIDIA%20OpenShell-v0.1.7-76B900?logo=nvidia)](https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.7)
+[![License](https://img.shields.io/github/license/zcsizmadia/OpenShell.Net)](https://github.com/zcsizmadia/OpenShell.Net/blob/main/LICENSE)
+
 .NET client for the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It targets `net8.0` and `net10.0` (apps on .NET 11 use the `net10.0` build, and the tests also run on .NET 11), is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
 
 > This is a community project. It is not affiliated with, endorsed by, or supported by NVIDIA. Report problems in this repository's [issues](https://github.com/zcsizmadia/OpenShell.Net/issues), not upstream.
