@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+version: 2
+
+updates:
+  # NuGet packages, pinned centrally in Directory.Packages.props.
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: build(deps)
+    ignore:
+      # The libraries reference the lowest Microsoft.Extensions major they support (8.x), so apps on .NET 8 are not
+      # forced onto newer packages. Raise these deliberately when dropping net8.0, not through Dependabot.
+      - dependency-name: Microsoft.Extensions.*
+        update-types: [version-update:semver-major]
+    groups:
+      grpc:
+        patterns: [Google.Protobuf, Grpc.*]
+      microsoft-extensions:
+        patterns: [Microsoft.Extensions.*]
+        exclude-patterns: [Microsoft.Extensions.TimeProvider.Testing]
+      test:
+        patterns: [TUnit*, Microsoft.Testing.*, Microsoft.Extensions.TimeProvider.Testing]
+
+  # Workflow actions are pinned by commit SHA with a version comment; Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The SDK in global.json. A new major SDK is adopted deliberately.
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
+    commit-message:
+      prefix: build(deps)
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
