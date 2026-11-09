@@ -15,3 +15,6 @@ obj/
 # Package smoke tests (scripts/ci.sh smoke and aot).
 tests/package-smoke/.packages/
 tests/package-smoke/.aot/
+
+# Stryker.NET mutation testing output.
+StrykerOutput/

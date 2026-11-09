@@ -1,0 +1,78 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+# Mutation testing with Stryker.NET (tests/OpenShell.Sdk.Tests/stryker-config.json). A report, not a gate:
+# it shows which code the tests run without checking. Run it by hand with a `since` ref to mutate only the
+# code changed since that ref.
+name: Mutation testing
+
+on:
+  schedule:
+    - cron: "41 3 * * 0"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: Mutate only code changed since this ref (for example main); empty mutates everything
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  stryker:
+    name: Stryker.NET (OpenShell.Sdk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # `--since` compares against another ref, so fetch the history.
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+            11.0.x
+
+      - name: Restore tools
+        run: dotnet tool restore
+
+      - name: Run Stryker
+        working-directory: tests/OpenShell.Sdk.Tests
+        env:
+          SINCE: ${{ inputs.since }}
+        run: |
+          args=(--output "$GITHUB_WORKSPACE/StrykerOutput")
+          if [ -n "${SINCE:-}" ]; then
+            args+=(--since "$SINCE")
+          fi
+          dotnet stryker "${args[@]}"
+
+      - name: Summary
+        if: always()
+        run: |
+          report="$(ls StrykerOutput/reports/mutation-report.md 2>/dev/null || true)"
+          if [ -n "$report" ]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-report
+          path: StrykerOutput/reports/
+          retention-days: 30
+          if-no-files-found: warn
