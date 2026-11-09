@@ -159,12 +159,92 @@ public class CallbackServerTests
     [Test]
     public async Task Parses_queries_without_values_and_empty_input()
     {
-        var parsed = CallbackServer.ParseQuery("a&b=&c=1&c=2");
+        var parsed = CallbackServer.ParseQuery("a&b=&c=1&c=2&=v");
 
         await Assert.That(parsed["a"]).IsEqualTo("");
         await Assert.That(parsed["b"]).IsEqualTo("");
         await Assert.That(parsed["c"]).IsEqualTo("1");
+        await Assert.That(parsed[""]).IsEqualTo("v");
         await Assert.That(CallbackServer.ParseQuery("").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    [Arguments("/elsewhere?code=c&state=s", "404 Not Found", "not found")]
+    [Arguments("/callback?code=c&state=wrong", "400 Bad Request", "state mismatch")]
+    [Arguments("/callback?state=s", "400 Bad Request", "missing authorization code")]
+    [Arguments("/callback?code=&state=s", "400 Bad Request", "missing authorization code")]
+    [Arguments("/callback?error=access_denied&state=s", "400 Bad Request", "authorization failed")]
+    [Arguments("/callback?code=c&state=s", "200 OK", "<html><body><h1>Login successful</h1><p>You can close this window.</p></body></html>")]
+    public async Task Each_outcome_has_its_own_status_and_body(string target, string status, string body)
+    {
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        var response = await Get(server.Port, target);
+
+        await Assert.That(response).StartsWith($"HTTP/1.1 {status}\r\n");
+        await Assert.That(response).EndsWith($"\r\n\r\n{body}");
+    }
+
+    [Test]
+    public async Task A_rejected_method_names_the_reason()
+    {
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        var response = await SendRaw(server.Port, "POST /callback?code=c&state=s HTTP/1.1\r\n\r\n"u8.ToArray());
+
+        await Assert.That(response).StartsWith("HTTP/1.1 405 Method Not Allowed\r\n");
+        await Assert.That(response).EndsWith("\r\n\r\nmethod not allowed");
+    }
+
+    [Test]
+    public async Task A_provider_error_faults_the_wait_with_an_auth_code_failure()
+    {
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        await Get(server.Port, "/callback?error=access_denied&state=s");
+
+        var ex = await Assert.That(async () => await server.WaitForCodeAsync()).Throws<OidcException>();
+        await Assert.That(ex!.Message).Contains("provider returned an authorization error");
+    }
+
+    [Test]
+    public async Task A_request_line_without_a_protocol_version_is_accepted()
+    {
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        var response = await SendRaw(server.Port, "GET /callback?code=c&state=s\r\n"u8.ToArray());
+
+        await Assert.That(response).Contains("200 OK");
+        await Assert.That(await server.WaitForCodeAsync().WaitAsync(TimeSpan.FromSeconds(5))).IsEqualTo("c");
+    }
+
+    [Test]
+    public async Task An_empty_first_line_is_answered_at_once()
+    {
+        await using var server = CallbackServer.TryStart(0, "s")!;
+
+        // No shutdown: the server must answer on the newline rather than wait for more bytes or the timeout.
+        var response = await SendRaw(server.Port, "\nGET /callback?code=c&state=s HTTP/1.1\r\n"u8.ToArray());
+
+        await Assert.That(response).Contains("405");
+        await Assert.That(server.WaitForCodeAsync().IsCompleted).IsFalse();
+    }
+
+    [Test]
+    public async Task A_client_that_never_finishes_its_request_line_is_dropped_after_the_timeout()
+    {
+        await using var server = CallbackServer.TryStart(0, "s", TimeSpan.FromMilliseconds(200))!;
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.Port);
+        var stream = client.GetStream();
+        await stream.WriteAsync("GET /callba"u8.ToArray());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var read = await stream.ReadAsync(new byte[16], cts.Token);
+
+        // The server closed the connection without answering.
+        await Assert.That(read).IsEqualTo(0);
+        await Assert.That(await Get(server.Port, "/callback?code=c&state=s")).Contains("200 OK");
     }
 }
 

@@ -180,12 +180,8 @@ internal sealed partial class SshClient(ClientCore core, string workspace) : ISs
             return IPAddress.TryParse(host.AsSpan(1, host.Length - 2), out var v6) && v6.AddressFamily == AddressFamily.InterNetworkV6;
         }
 
-        // A strict dotted quad is an IPv4 address; anything else is judged as a DNS name.
-        if (IPAddress.TryParse(host, out var ip) && ip.AddressFamily == AddressFamily.InterNetwork && host.Count(c => c == '.') == 3)
-        {
-            return true;
-        }
-
+        // Everything else, IPv4 addresses included, is judged as a DNS name: a dotted quad is four all-digit labels,
+        // which the label pattern accepts, and IPAddress.TryParse accepts nothing the pattern would reject.
         var dns = host.EndsWith('.') ? host[..^1] : host;
         if (dns.Length == 0)
         {
