@@ -112,7 +112,7 @@ public class ForwardStreamTests
         using var client = ClientTests.NewClient(invoker);
         await using var stream = await client.Tcp.ForwardAsync("sb", 1);
         var payload = new byte[600 * 1024];
-        Random.Shared.NextBytes(payload);
+        new Random(20260101).NextBytes(payload); // Seeded, so a failure reproduces with the same bytes.
 
         await stream.WriteAsync(payload, 0, payload.Length, CancellationToken.None);
         var echoed = new byte[payload.Length];

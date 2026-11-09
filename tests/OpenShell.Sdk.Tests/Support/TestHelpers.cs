@@ -4,7 +4,6 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using Microsoft.Extensions.Time.Testing;
 
 namespace OpenShell.Tests.Support;
 
@@ -97,26 +96,28 @@ internal sealed class ConformanceFixture
 
 internal static class TestPorts
 {
-    /// <summary>Reserves then releases an ephemeral loopback port.</summary>
+    private static readonly HashSet<int> Issued = [];
+
+    /// <summary>
+    /// Reserves then releases an ephemeral loopback port, never returning the same port twice in this process, so two
+    /// tests running in parallel (in any classes) cannot be handed the same one. Something outside the test process can
+    /// still take the port between its release and its use; that window is inherent to handing out a port number.
+    /// </summary>
     public static int Free()
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
-}
-
-internal static class TimeExtensions
-{
-    /// <summary>Advances a fake clock in small steps until the task finishes, yielding between steps.</summary>
-    public static async Task AdvanceUntilDone(this FakeTimeProvider time, Task task, TimeSpan? step = null, int maxSteps = 2000)
-    {
-        for (var i = 0; i < maxSteps && !task.IsCompleted; i++)
+        while (true)
         {
-            time.Advance(step ?? TimeSpan.FromSeconds(1));
-            await Task.Delay(1);
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            lock (Issued)
+            {
+                if (Issued.Add(port))
+                {
+                    return port;
+                }
+            }
         }
     }
 }

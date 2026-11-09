@@ -66,7 +66,7 @@ public class RootfsClientTests
             var source = Path.Join(dir, "root.tar");
             var target = Path.Join(dir, "staged.tar");
             var payload = new byte[300_000];
-            Random.Shared.NextBytes(payload);
+            new Random(20260101).NextBytes(payload); // Seeded, so a failure reproduces with the same bytes.
             await File.WriteAllBytesAsync(source, payload);
             Wire.BeginRootfsTarStagingRequest? seen = null;
             using var client = ClientTests.NewClient(Gateway(target, 0, r => seen = r));

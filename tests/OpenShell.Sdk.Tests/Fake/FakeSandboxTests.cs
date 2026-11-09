@@ -3,6 +3,7 @@
 
 using Microsoft.Extensions.Time.Testing;
 using OpenShell.Testing;
+using OpenShell.Tests.Support;
 
 namespace OpenShell.Tests;
 
@@ -12,14 +13,7 @@ public class FakeSandboxTests
 
     private static SandboxSpec Spec(string image = "img:1") => FakeCoreTests.Spec(image);
 
-    private static async Task Advance(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 500 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
-        }
-    }
+    private static Task Advance(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1));
 
     [Test]
     public async Task Create_reports_provisioning_then_ready_and_maps_fields()

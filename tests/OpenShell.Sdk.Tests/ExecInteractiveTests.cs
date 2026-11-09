@@ -28,6 +28,7 @@ internal static class Interactive
     {
         await foreach (var _ in ch.ReadAllAsync())
         {
+            // Discard input; the fake only ends when the client completes or disposes the call.
         }
     }
 
@@ -145,6 +146,7 @@ public class ExecInteractiveTests
         {
             await foreach (var _ in ch.ReadAllAsync())
             {
+                // Drain the client input until it completes; only then report the exit.
             }
 
             ch.Send(Interactive.Exit(4));
@@ -223,6 +225,7 @@ public class ExecInteractiveTests
         {
             await foreach (var _ in session.ReadEventsAsync(cts.Token))
             {
+                // Read until cancelled; the test checks how the reader ends.
             }
         });
         await cts.CancelAsync();
@@ -423,10 +426,7 @@ public class ExecInteractiveTests
     private static async Task<Wire.ExecSandboxInput> WaitForFrameAsync(FakeCallInvoker invoker)
     {
         var channel = Interactive.Channel(invoker);
-        for (var i = 0; i < 200 && channel.Received.Count == 0; i++)
-        {
-            await Task.Delay(5);
-        }
+        await Waits.UntilAsync(() => channel.Received.Count > 0, "the first interactive frame to be sent");
 
         return channel.Received[0];
     }

@@ -25,14 +25,7 @@ public class RetryPolicyTests
             time,
             useRetry: true);
 
-    private static async Task Drive(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 500 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Yield();
-        }
-    }
+    private static Task Drive(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromMilliseconds(250));
 
     [Test]
     public async Task Retries_transient_reads_until_success()

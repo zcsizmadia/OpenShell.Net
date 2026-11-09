@@ -4,6 +4,7 @@
 using System.Net;
 using System.Text;
 using OpenShell.Testing;
+using OpenShell.Tests.Support;
 
 namespace OpenShell.Tests;
 
@@ -15,19 +16,6 @@ internal static class FakeTestHelpers
         await client.Sandboxes.CreateAsync("a", FakeCoreTests.Spec());
         await client.Sandboxes.GetAsync("a");
         return client;
-    }
-
-    public static async Task EventuallyAsync(Func<bool> condition)
-    {
-        for (var i = 0; i < 400 && !condition(); i++)
-        {
-            await Task.Delay(5);
-        }
-
-        if (!condition())
-        {
-            throw new TimeoutException("condition was not met in time");
-        }
     }
 
     public static string TempDirectory()
@@ -175,7 +163,7 @@ public class FakeExecTests
         await session.ResizeAsync(100, 30);
         await session.CompleteStdinAsync();
         var exit = await session.WaitForExitAsync();
-        await FakeTestHelpers.EventuallyAsync(() => client.Gateway.InteractiveInput.Any(f => f.Kind == FakeInteractiveFrameKind.StdinClosed));
+        await Waits.UntilAsync(() => client.Gateway.InteractiveInput.Any(f => f.Kind == FakeInteractiveFrameKind.StdinClosed));
 
         var frames = client.Gateway.InteractiveInput;
         await Assert.That(exit).IsEqualTo(3);

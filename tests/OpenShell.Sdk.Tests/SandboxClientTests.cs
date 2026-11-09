@@ -481,12 +481,5 @@ public class SandboxClientTests
         await Assert.That(async () => await client.Sandboxes.WaitDeletedAsync("a")).Throws<OpenShellException>();
     }
 
-    private static async Task AdvanceUntilDone(FakeTimeProvider time, Task task)
-    {
-        for (var i = 0; i < 200 && !task.IsCompleted; i++)
-        {
-            time.Advance(TimeSpan.FromSeconds(1));
-            await Task.Yield();
-        }
-    }
+    private static Task AdvanceUntilDone(FakeTimeProvider time, Task task) => time.AdvanceUntilDoneAsync(task, TimeSpan.FromSeconds(1));
 }

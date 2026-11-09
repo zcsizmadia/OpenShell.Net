@@ -81,7 +81,7 @@ public class SandboxFeatureTests
         {
             // A single file from a stream, with a mode and a parent directory that does not exist yet.
             var payload = new byte[256 * 1024];
-            Random.Shared.NextBytes(payload);
+            new Random(20260101).NextBytes(payload); // Seeded, so a failure reproduces with the same bytes.
             using (var upload = new MemoryStream(payload))
             {
                 await client.Files.UploadAsync(sandbox.Name, upload, "/tmp/dotnet-it/blob.bin", UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, cancellationToken);

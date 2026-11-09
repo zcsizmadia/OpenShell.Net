@@ -154,7 +154,7 @@ public class EdgeTunnelProxyTests
         using var client = await ConnectAsync(proxy);
         var stream = client.GetStream();
         var payload = new byte[1_500_000];
-        Random.Shared.NextBytes(payload);
+        new Random(20260101).NextBytes(payload); // Seeded, so a failure reproduces with the same bytes.
 
         var write = Task.Run(async () => await stream.WriteAsync(payload));
         var echoed = await ReadExactly(stream, payload.Length);
@@ -373,23 +373,39 @@ public class EdgeTunnelProxyTests
     public async Task Dispose_waits_for_connections_that_finish_within_the_timeout()
     {
         var logger = new ListLogger();
-        var connector = new WebSocketConnector((_, _, ct) =>
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var serverClosed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connector = new WebSocketConnector((_, _, _) =>
         {
             var (client, server) = InMemoryWebSocket.CreatePair();
             _ = Task.Run(async () =>
             {
-                await Task.Delay(100);
+                // The gateway side ends the connection only when the test says so, after disposal has started.
+                await release.Task;
                 await server.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-            }, ct);
+                serverClosed.TrySetResult();
+            }, CancellationToken.None);
+            connected.TrySetResult();
             return ValueTask.FromResult<WebSocket>(client);
         });
-        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromSeconds(10) });
+        var proxy = StartProxy(new EdgeTunnelOptions { Connector = connector, Logger = logger, CloseTimeout = TimeSpan.FromSeconds(30) });
         using var client = await ConnectAsync(proxy);
-        await Task.Delay(30);
+        await connected.Task.WithinBudget();
 
-        await proxy.DisposeAsync();
+        var dispose = proxy.DisposeAsync().AsTask();
+        await Task.Delay(100);
 
-        await Assert.That(logger.Entries.Any(e => e.Level == LogLevel.Information)).IsFalse();
+        // Disposal is holding for the open connection rather than returning or cutting it.
+        await Assert.That(dispose.IsCompleted).IsFalse();
+        release.SetResult();
+        await dispose.WithinBudget();
+
+        // The connection ended on its own: the server-side close completed and the local side saw a clean end of stream.
+        await serverClosed.Task.WithinBudget();
+        var read = await client.GetStream().ReadAsync(new byte[8]).AsTask().WithinBudget();
+        await Assert.That(read).IsEqualTo(0);
+        await Assert.That(logger.Entries.Any(e => e.Level >= LogLevel.Information)).IsFalse();
     }
 
     [Test]
@@ -484,7 +500,7 @@ public class EdgeTunnelProxyTests
         await using var server = new WsServer();
         if (!server.Started)
         {
-            return; // HttpListener cannot bind here (for example a locked-down Windows account).
+            Skip.Test("HttpListener cannot bind here (for example a locked-down Windows account)");
         }
 
         var configured = false;

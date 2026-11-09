@@ -188,6 +188,7 @@ public class OidcTokenFileTests
     {
         if (OperatingSystem.IsWindows())
         {
+            Skip.Test("Unix file modes do not apply on Windows");
             return;
         }
 

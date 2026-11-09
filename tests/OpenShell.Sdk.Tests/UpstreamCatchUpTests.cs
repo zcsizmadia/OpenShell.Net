@@ -107,50 +107,39 @@ public class UpstreamCatchUpTests
     [Test]
     public async Task Retry_waits_at_least_the_delay_the_gateway_asked_for()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var attempts = 0;
         var invoker = new FakeCallInvoker().Unary<Wire.HealthRequest, Wire.HealthResponse>("Health", _ =>
             ++attempts == 1 ? throw LockTimeout(TimeSpan.FromSeconds(2)) : new Wire.HealthResponse { Version = "ok" });
         using var client = RetryingClient(invoker, time);
 
         var task = client.Health.CheckAsync().AsTask();
-        for (var i = 0; i < 20 && attempts < 2; i++)
-        {
-            await Task.Yield();
-        }
+        await time.WaitForTimerAsync(TimeSpan.FromSeconds(2));
 
         // The policy's own backoff (100 ms) has passed, but not the 2 s the gateway asked for.
         time.Advance(TimeSpan.FromSeconds(1));
-        for (var i = 0; i < 20; i++)
-        {
-            await Task.Yield();
-        }
-
         await Assert.That(attempts).IsEqualTo(1);
 
         time.Advance(TimeSpan.FromSeconds(1));
-        await Assert.That((await task).Version).IsEqualTo("ok");
+        await Assert.That((await task.WithinBudget()).Version).IsEqualTo("ok");
         await Assert.That(attempts).IsEqualTo(2);
     }
 
     [Test]
     public async Task Retry_honours_a_gateway_delay_equal_to_the_policy_maximum()
     {
-        var time = new FakeTimeProvider();
+        var time = new TimerSignalingTimeProvider();
         var attempts = 0;
         var invoker = new FakeCallInvoker().Unary<Wire.HealthRequest, Wire.HealthResponse>("Health", _ =>
             ++attempts == 1 ? throw LockTimeout(Retry.MaxBackoff) : new Wire.HealthResponse { Version = "ok" });
         using var client = RetryingClient(invoker, time);
 
         var task = client.Health.CheckAsync().AsTask();
-        for (var i = 0; i < 20 && !task.IsCompleted; i++)
-        {
-            await Task.Yield();
-        }
+        await time.WaitForTimerAsync(Retry.MaxBackoff);
 
         // Exactly MaxBackoff is still allowed: the client waits it out and retries.
         time.Advance(Retry.MaxBackoff);
-        await Assert.That((await task).Version).IsEqualTo("ok");
+        await Assert.That((await task.WithinBudget()).Version).IsEqualTo("ok");
         await Assert.That(attempts).IsEqualTo(2);
     }
 
