@@ -150,6 +150,7 @@ public static class OidcLogin
             var url = OidcFlows.BuildAuthorizationUrl(metadata.AuthorizationEndpoint, cfg.ClientId, redirectUri, state, challenge, cfg.InteractiveScopes);
             try
             {
+                // Stryker disable once all : a mutant here makes the tests launch the real system browser.
                 await (cfg.Options.BrowserLauncher ?? OidcBrowser.OpenAsync)(url, ct).ConfigureAwait(false);
             }
             catch (Exception e) when (e is not OperationCanceledException)

@@ -20,13 +20,20 @@ public class OidcLoginTests
     private static HttpResponseMessage TokenOk(string access = "login-access", string refresh = "login-refresh") =>
         StubHandler.Json($$"""{"access_token":"{{access}}","refresh_token":"{{refresh}}","token_type":"Bearer","expires_in":3600}""");
 
+    /// <summary>
+    /// The default launcher in tests: fails like a missing browser, so no test (and no Stryker mutant of the login
+    /// flow) can fall through to <see cref="OidcBrowser.OpenAsync"/> and open a real browser.
+    /// </summary>
+    private static ValueTask NoBrowser(Uri url, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("tests never open the system browser");
+
     private static OidcOptions Options(StubHandler handler, Func<Uri, CancellationToken, ValueTask>? launcher = null, int? port = null) => new()
     {
         Issuer = Issuer,
         ClientId = "cli",
         HttpClient = new HttpClient(handler),
         InMemory = true,
-        BrowserLauncher = launcher,
+        BrowserLauncher = launcher ?? NoBrowser,
         CallbackPort = port ?? TestPorts.Free(),
         Timeout = TimeSpan.FromSeconds(20),
     };
@@ -65,9 +72,21 @@ public class OidcLoginTests
         var form = handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
         await Assert.That(form["grant_type"]).IsEqualTo("authorization_code");
         await Assert.That(form["code"]).IsEqualTo("the-code");
+        await Assert.That(form["client_id"]).IsEqualTo("cli");
         await Assert.That(form["redirect_uri"]).IsEqualTo(auth["redirect_uri"]);
         var expected = Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(form["code_verifier"]))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         await Assert.That(auth["code_challenge"]).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task Browser_flow_accepts_a_token_response_without_expiry()
+    {
+        var handler = StubHandler.Provider(Issuer, _ => StubHandler.Json("""{"access_token":"a"}"""));
+        var options = Options(handler, Browser(q => $"code=c&state={Uri.EscapeDataString(q["state"])}"));
+
+        var tokens = await OidcLogin.LoginAsync(options);
+
+        await Assert.That(tokens.AccessToken).IsEqualTo("a");
     }
 
     [Test]
@@ -443,6 +462,9 @@ public class OidcLoginTests
         var throwing = options with { ClientSecretProvider = _ => throw new InvalidOperationException("vault says no") };
         var ex2 = await Assert.That(async () => await OidcLogin.RefreshAsync(throwing, "r")).Throws<OidcException>();
         await Assert.That(ex2!.ToString()).DoesNotContain("vault says no");
+        await Assert.That(ex2.Failure).IsEqualTo(OidcFailure.Refresh);
+        await Assert.That(ex2.Message).Contains("client secret provider failed");
+        await Assert.That(rejected.Requests.Count(r => r.Method == HttpMethod.Post)).IsEqualTo(1);
 
         var cancelling = options with { ClientSecretProvider = ct => throw new OperationCanceledException(ct) };
         await Assert.That(async () => await OidcLogin.RefreshAsync(cancelling, "r")).Throws<OperationCanceledException>();
@@ -514,6 +536,68 @@ public class OidcDeviceLoginTests
         var pollForm = handler.Requests.Last(r => r.Url.AbsolutePath == "/token").Form;
         await Assert.That(pollForm["grant_type"]).IsEqualTo("urn:ietf:params:oauth:grant-type:device_code");
         await Assert.That(pollForm["device_code"]).IsEqualTo("dev-code");
+        await Assert.That(pollForm["client_id"]).IsEqualTo("cli");
+    }
+
+    [Test]
+    public async Task Slow_down_adds_five_seconds_to_the_interval()
+    {
+        var time = new FakeTimeProvider();
+        var polls = new Queue<HttpResponseMessage>([
+            StubHandler.Json("""{"error":"slow_down"}""", HttpStatusCode.BadRequest),
+            StubHandler.Json("""{"access_token":"a"}"""),
+        ]);
+        var handler = StubHandler.Provider(Issuer, token: _ => polls.Dequeue(), device: _ => StubHandler.Json(DeviceJson(interval: 5)), deviceEndpoint: true);
+
+        var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
+        await AdvanceAsync(time, 5);
+        await AdvanceAsync(time, 9);
+
+        // The first poll at 5 s answered slow_down, so the next one waits 10 s, not 5.
+        await Assert.That(task.IsCompleted).IsFalse();
+        await Assert.That(handler.Requests.Count(r => r.Url.AbsolutePath == "/token")).IsEqualTo(1);
+        await AdvanceAsync(time, 1);
+        await Assert.That((await task.WaitAsync(TimeSpan.FromSeconds(10))).AccessToken).IsEqualTo("a");
+    }
+
+    [Test]
+    public async Task A_one_second_interval_is_honored()
+    {
+        var time = new FakeTimeProvider();
+        var handler = StubHandler.Provider(
+            Issuer,
+            token: _ => StubHandler.Json("""{"access_token":"a"}"""),
+            device: _ => StubHandler.Json(DeviceJson(interval: 1)),
+            deviceEndpoint: true);
+
+        var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
+        await AdvanceAsync(time, 1);
+
+        await Assert.That((await task.WaitAsync(TimeSpan.FromSeconds(10))).AccessToken).IsEqualTo("a");
+    }
+
+    [Test]
+    public async Task A_device_response_without_expiry_does_not_expire_the_code_at_once()
+    {
+        var time = new FakeTimeProvider();
+        var handler = StubHandler.Provider(
+            Issuer,
+            token: _ => StubHandler.Json("""{"access_token":"a"}"""),
+            device: _ => StubHandler.Json(DeviceJson(expiresIn: 0)),
+            deviceEndpoint: true);
+
+        var task = OidcLogin.DeviceLoginAsync(Options(handler, time));
+        await time.AdvanceUntilDone(task);
+
+        await Assert.That((await task).AccessToken).IsEqualTo("a");
+    }
+
+    private static async Task AdvanceAsync(FakeTimeProvider time, int seconds)
+    {
+        // Let the login reach its next timer before moving the clock.
+        await Task.Delay(50);
+        time.Advance(TimeSpan.FromSeconds(seconds));
+        await Task.Delay(50);
     }
 
     [Test]
@@ -537,9 +621,9 @@ public class OidcDeviceLoginTests
     }
 
     [Test]
-    [Arguments("expired_token", "expired")]
-    [Arguments("access_denied", "denied")]
-    [Arguments("invalid_client", "invalid_client")]
+    [Arguments("expired_token", "device code expired")]
+    [Arguments("access_denied", "access denied by user")]
+    [Arguments("invalid_client", "device code exchange failed: invalid_client")]
     [Arguments("weird error!", "device code exchange failed")]
     public async Task Terminal_errors_are_reported(string error, string expected)
     {
@@ -555,7 +639,7 @@ public class OidcDeviceLoginTests
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.DeviceCode);
-        await Assert.That(ex.Message).Contains(expected);
+        await Assert.That(ex.Message).EndsWith(expected);
         await Assert.That(ex.Message).DoesNotContain("private");
     }
 
@@ -570,6 +654,7 @@ public class OidcDeviceLoginTests
 
         var ex = await Assert.That(async () => await task).Throws<OidcException>();
         await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Timeout);
+        await Assert.That(ex.Message).Contains("device code expired before sign-in completed");
     }
 
     [Test]
@@ -599,18 +684,24 @@ public class OidcDeviceLoginTests
     [Test]
     public async Task Device_authorization_response_problems_are_rejected()
     {
-        foreach (var body in new[]
+        const string missingCodes = "device authorization response missing device_code or user_code";
+        const string missingUri = "device authorization response missing verification_uri";
+        foreach (var (body, reason) in new[]
         {
-            "{not json",
-            "null",
-            """{"user_code":"x","verification_uri":"u"}""",
-            """{"device_code":"x","verification_uri":"u"}""",
-            """{"device_code":"x","user_code":"y"}""",
+            ("{not json", "invalid device authorization response JSON"),
+            ("null", missingCodes),
+            ("""{"user_code":"x","verification_uri":"u"}""", missingCodes),
+            ("""{"device_code":"","user_code":"x","verification_uri":"u"}""", missingCodes),
+            ("""{"device_code":"x","verification_uri":"u"}""", missingCodes),
+            ("""{"device_code":"x","user_code":"","verification_uri":"u"}""", missingCodes),
+            ("""{"device_code":"x","user_code":"y"}""", missingUri),
+            ("""{"device_code":"x","user_code":"y","verification_uri":""}""", missingUri),
         })
         {
             var handler = StubHandler.Provider(Issuer, device: _ => StubHandler.Json(body), deviceEndpoint: true);
             var ex = await Assert.That(async () => await OidcLogin.DeviceLoginAsync(Options(handler, new FakeTimeProvider()))).Throws<OidcException>();
             await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.DeviceCode);
+            await Assert.That(ex.Message).Contains(reason);
         }
 
         var notOk = StubHandler.Provider(Issuer, device: _ => StubHandler.Json("{}", HttpStatusCode.BadRequest), deviceEndpoint: true);
@@ -628,11 +719,14 @@ public class OidcDeviceLoginTests
             device: _ => StubHandler.Json(DeviceJson()),
             deviceEndpoint: true);
 
-        // The console branch writes through TUnit's redirected console; completing proves it ran.
+        // TUnit captures the console per test.
         var task = OidcLogin.DeviceLoginAsync(Options(handler, time) with { DisplayDeviceCode = null });
         await time.AdvanceUntilDone(task);
 
         await Assert.That((await task).AccessToken).IsEqualTo("a");
+        var output = TestContext.Current!.GetStandardOutput();
+        await Assert.That(output).Contains("To sign in, visit: https://issuer.example.com/activate");
+        await Assert.That(output).Contains("Enter code: ABCD-EFGH");
     }
 
     [Test]

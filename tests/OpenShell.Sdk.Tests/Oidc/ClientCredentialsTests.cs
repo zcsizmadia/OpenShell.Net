@@ -169,6 +169,7 @@ public class ClientCredentialsTests
         };
         var ex2 = await Assert.That(async () => await OidcLogin.ClientCredentialsAsync(options)).Throws<OidcException>();
         await AssertClean(ex2!.ToString(), secret, supplierError);
+        await Assert.That(ex2.Message).Contains("client secret provider failed");
         await Assert.That(ex2.InnerException).IsNull();
 
         // Non-JSON error page containing the secret.
@@ -226,7 +227,8 @@ public class ClientCredentialsTests
     public async Task Empty_secret_from_provider_and_cancellation_are_handled()
     {
         var empty = Options(TokenServer(_ => Ok())) with { ClientSecret = null, ClientSecretProvider = _ => ValueTask.FromResult("") };
-        await Assert.That(async () => await OidcLogin.ClientCredentialsAsync(empty)).Throws<OidcException>();
+        var emptyEx = await Assert.That(async () => await OidcLogin.ClientCredentialsAsync(empty)).Throws<OidcException>();
+        await Assert.That(emptyEx!.Message).Contains("client secret must not be empty");
 
         var cancelling = Options(TokenServer(_ => Ok())) with
         {

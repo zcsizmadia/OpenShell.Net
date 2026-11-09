@@ -205,12 +205,12 @@ internal static class OidcFlows
 
     private static async Task<DeviceAuthorizationDto> RequestDeviceCodeAsync(OidcResolved cfg, string endpoint, CancellationToken ct)
     {
-        var fields = new List<KeyValuePair<string, string>> { new("client_id", cfg.ClientId) };
-        var scopes = cfg.InteractiveScopes;
-        if (scopes.Count > 0)
+        // InteractiveScopes falls back to the default scopes, so it is never empty.
+        var fields = new List<KeyValuePair<string, string>>
         {
-            fields.Add(new("scope", string.Join(' ', scopes)));
-        }
+            new("client_id", cfg.ClientId),
+            new("scope", string.Join(' ', cfg.InteractiveScopes)),
+        };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = OidcHttp.Form(fields) };
         var (status, body) = await OidcHttp.SendAsync(cfg.Http, request, OidcFailure.DeviceCode, "device authorization", ct).ConfigureAwait(false);
@@ -219,24 +219,28 @@ internal static class OidcFlows
             throw new OidcException(OidcFailure.DeviceCode, $"device authorization endpoint returned HTTP {(int)status}");
         }
 
-        DeviceAuthorizationDto? device;
-        try
-        {
-            device = JsonSerializer.Deserialize(body, SdkJsonContext.Default.DeviceAuthorizationDto);
-        }
-        catch (JsonException)
-        {
-            throw new OidcException(OidcFailure.DeviceCode, "invalid device authorization response JSON");
-        }
-
-        return device switch
+        return ParseDeviceAuthorization(body) switch
         {
             null or { DeviceCode: null or "" } or { UserCode: null or "" } =>
                 throw new OidcException(OidcFailure.DeviceCode, "device authorization response missing device_code or user_code"),
             { VerificationUri: null or "" } =>
                 throw new OidcException(OidcFailure.DeviceCode, "device authorization response missing verification_uri"),
-            _ => device,
+            var device => device,
         };
+    }
+
+    private static DeviceAuthorizationDto? ParseDeviceAuthorization(byte[] body)
+    {
+        // Returning from inside the try keeps the caller free of a local assigned in a try, which made Stryker drop
+        // every mutant in RequestDeviceCodeAsync (CS0165).
+        try
+        {
+            return JsonSerializer.Deserialize(body, SdkJsonContext.Default.DeviceAuthorizationDto);
+        }
+        catch (JsonException)
+        {
+            throw new OidcException(OidcFailure.DeviceCode, "invalid device authorization response JSON");
+        }
     }
 
     private static async Task<OidcTokens> PollDeviceAsync(OidcResolved cfg, string tokenEndpoint, string deviceCode, long interval, CancellationToken ct)

@@ -293,6 +293,14 @@ public class OidcEdgeCaseTests
     }
 
     [Test]
+    public async Task Authorization_url_lists_the_parameters_in_order_without_a_stray_separator()
+    {
+        var url = OidcFlows.BuildAuthorizationUrl("https://idp.example.com/auth", "cli", "http://localhost:1/callback", "st", "ch", ["openid", "email"]);
+
+        await Assert.That(url.Query).IsEqualTo("?response_type=code&client_id=cli&redirect_uri=http%3A%2F%2Flocalhost%3A1%2Fcallback&state=st&scope=openid%20email&code_challenge=ch&code_challenge_method=S256");
+    }
+
+    [Test]
     public async Task Existing_query_parameters_on_the_authorization_endpoint_survive()
     {
         var url = OidcFlows.BuildAuthorizationUrl("https://idp.example.com/auth?tenant=a", "cli", "http://localhost:1/callback", "st", null, ["openid"]);
