@@ -135,6 +135,9 @@ public class OwnerRoutingTests
 
         await Assert.That(result.StdoutText).IsEqualTo("ok");
         await Assert.That(string.Join(",", OptionsOf(invoker, "ExecSandbox").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
+
+        // Both the abandoned routed call and the unrouted one are released.
+        await Assert.That(invoker.StreamDisposals).IsEqualTo(2);
     }
 
     [Test]
@@ -217,6 +220,8 @@ public class OwnerRoutingTests
         await Assert.That(string.Join(",", OptionsOf(invoker, "ForwardTcp").Select(o => Replica(o) ?? "-"))).IsEqualTo($"{Owner},-");
         await Assert.That(Relay.Channel(invoker, 0).Received[0].Init.Tcp.Port).IsEqualTo(8080u);
         await Assert.That(Relay.Channel(invoker, 1).Received[0].Init.Tcp.Port).IsEqualTo(8080u);
+        await Assert.That(Relay.Channel(invoker, 0).ClientDisposed).IsTrue();
+        await Assert.That(Relay.Channel(invoker, 1).ClientDisposed).IsFalse();
     }
 
     [Test]
@@ -232,6 +237,20 @@ public class OwnerRoutingTests
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Conflict);
         await Assert.That(ex.Message).Contains("sandbox is not ready");
         await Assert.That(invoker.CountOf("ForwardTcp")).IsEqualTo(1);
+        await Assert.That(Relay.Channel(invoker).ClientDisposed).IsTrue();
+    }
+
+    [Test]
+    public async Task An_unrouted_open_whose_first_write_fails_releases_the_call()
+    {
+        var invoker = Gateway(owner: null).Duplex<Wire.TcpForwardFrame, Wire.TcpForwardFrame>("ForwardTcp", Relay.Echo);
+        invoker.DuplexFailWritesAfter = 0;
+        using var client = ClientTests.NewClient(invoker);
+
+        await Assert.That(async () => await client.Tcp.ForwardAsync("sb", 8080)).Throws<OpenShellException>();
+
+        await Assert.That(Replica(OptionsOf(invoker, "ForwardTcp").Single())).IsNull();
+        await Assert.That(Relay.Channel(invoker).ClientDisposed).IsTrue();
     }
 
     [Test]
@@ -284,6 +303,7 @@ public class OwnerRoutingTests
 
         await Assert.That(Replica(OptionsOf(invoker, "ForwardTcp").Single())).IsEqualTo(Owner);
         await Assert.That(Relay.Channel(invoker).Received).IsEmpty();
+        await Assert.That(Relay.Channel(invoker).ClientDisposed).IsTrue();
     }
 
     [Test]

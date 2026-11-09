@@ -222,6 +222,11 @@ internal sealed class FakeCallInvoker : CallInvoker
 
     public int CountOf(string method) => Calls.Count(c => c.Method == method);
 
+    /// <summary>How many server-streaming calls the client disposed.</summary>
+    public int StreamDisposals => Volatile.Read(ref _streamDisposals);
+
+    private int _streamDisposals;
+
     public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(
         Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request)
     {
@@ -265,7 +270,7 @@ internal sealed class FakeCallInvoker : CallInvoker
 
         var items = handler(request, options).Cast<TResponse>();
         return new AsyncServerStreamingCall<TResponse>(
-            new Reader<TResponse>(items), HeadersFor(method.Name, options), () => Status.DefaultSuccess, () => [], () => { });
+            new Reader<TResponse>(items), HeadersFor(method.Name, options), () => Status.DefaultSuccess, () => [], () => Interlocked.Increment(ref _streamDisposals));
     }
 
     /// <summary>Registers a duplex-streaming handler. The handler runs concurrently with the client and ends the call by returning.</summary>
