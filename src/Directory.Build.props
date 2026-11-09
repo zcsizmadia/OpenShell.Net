@@ -33,6 +33,11 @@
     <RepositoryUrl>https://github.com/zcsizmadia/OpenShell.Net</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <!-- Symbol packages (.snupkg) go to the nuget.org symbol server; Source Link maps them to the commit on GitHub. -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <!-- Repository-relative source paths in CI builds, so the shipped PDBs don't contain runner paths. -->
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <!--
       Checks the package on pack: every target framework exposes a compatible API. After the first nuget.org
