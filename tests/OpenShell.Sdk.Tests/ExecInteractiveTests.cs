@@ -111,6 +111,9 @@ public class ExecInteractiveTests
         await session.CompleteStdinAsync();
         await session.CompleteStdinAsync();
         var events = await Interactive.CollectAsync(session);
+        await session.DisposeAsync();
+
+        await Assert.That(Interactive.Channel(invoker).CompleteCount).IsEqualTo(1);
 
         await Assert.That(events.OfType<ExecOutput>().Where(o => !o.IsStdErr).Select(o => o.Text).Single()).IsEqualTo("HELLO");
         await Assert.That(events.OfType<ExecOutput>().Where(o => o.IsStdErr).Select(o => o.Text).Single()).IsEqualTo("100x30");
@@ -169,7 +172,8 @@ public class ExecInteractiveTests
         await using var session = await client.Exec.InteractiveAsync("sb", ["x"], 1, 1);
         await Interactive.CollectAsync(session);
 
-        await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<InvalidOperationException>();
+        var ex = await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<InvalidOperationException>();
+        await Assert.That(ex!.Message).IsEqualTo("the event stream can only be enumerated once");
     }
 
     [Test]
@@ -186,6 +190,7 @@ public class ExecInteractiveTests
         var ex = await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<OpenShellException>();
 
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Unavailable);
+        await Assert.That(ex.Message).IsEqualTo("exec stream ended without an exit event");
         await Assert.That(async () => await session.ExitCode).Throws<OpenShellException>();
     }
 
@@ -252,7 +257,8 @@ public class ExecInteractiveTests
         var session = await client.Exec.InteractiveAsync("sb", ["x"], 1, 1);
 
         await session.CompleteStdinAsync();
-        await Assert.That(async () => await session.WriteStdinAsync(new byte[1])).Throws<InvalidOperationException>();
+        var write = await Assert.That(async () => await session.WriteStdinAsync(new byte[1])).Throws<InvalidOperationException>();
+        await Assert.That(write!.Message).IsEqualTo("standard input is already closed");
         await Assert.That(async () => await session.ResizeAsync(1, 1)).Throws<InvalidOperationException>();
 
         await session.DisposeAsync();
@@ -272,6 +278,7 @@ public class ExecInteractiveTests
 
         var ex = await Assert.That(async () => await exit).Throws<OpenShellException>();
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Cancelled);
+        await Assert.That(ex.Message).IsEqualTo("the interactive session was closed before the command exited");
         await Assert.That(Interactive.Channel(invoker).ClientDisposed).IsTrue();
     }
 
@@ -348,7 +355,8 @@ public class ExecInteractiveTests
         await using var session = await client.Exec.InteractiveAsync("sb", ["x"], 1, 1);
         Interactive.Channel(invoker).MoveNextFault = new ObjectDisposedException("call");
 
-        await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<OperationCanceledException>();
+        var ex = await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<OperationCanceledException>();
+        await Assert.That(ex!.Message).IsEqualTo("the interactive session was closed");
         await Assert.That(async () => await session.ExitCode).Throws<OperationCanceledException>();
     }
 
@@ -360,7 +368,8 @@ public class ExecInteractiveTests
         var session = await client.Exec.InteractiveAsync("sb", ["x"], 1, 1);
         await session.DisposeAsync();
 
-        await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<OperationCanceledException>();
+        var ex = await Assert.That(async () => await Interactive.CollectAsync(session)).Throws<OperationCanceledException>();
+        await Assert.That(ex!.Message).IsEqualTo("the interactive session was closed");
     }
 
     [Test]
@@ -380,6 +389,35 @@ public class ExecInteractiveTests
         client.Dispose();
 
         await Assert.That(async () => await client.Exec.InteractiveAsync("sb", ["x"], 1, 1)).Throws<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task A_disposed_client_without_owner_routing_cannot_start_sessions()
+    {
+        var invoker = Interactive.With(Interactive.Shell);
+        var client = OpenShellClient.ForTesting(
+            new OpenShellClientOptions { Address = new Uri("http://localhost"), Auth = Auth.None, RouteToOwnerReplica = false },
+            invoker);
+        client.Dispose();
+
+        await Assert.That(async () => await client.Exec.InteractiveAsync("sb", ["x"], 1, 1)).Throws<ObjectDisposedException>();
+        await Assert.That(invoker.DuplexCalls.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Stdin_of_exactly_one_frame_is_sent_in_one_frame()
+    {
+        var invoker = Interactive.With(Interactive.Shell);
+        using var client = ClientTests.NewClient(invoker);
+        await using var session = await client.Exec.InteractiveAsync("sb", ["x"], 1, 1);
+
+        await session.WriteStdinAsync(new byte[256 * 1024]);
+        await session.WriteStdinAsync(new byte[(256 * 1024) + 1]);
+        await session.CompleteStdinAsync();
+        await Interactive.CollectAsync(session);
+
+        var frames = Interactive.Channel(invoker).Received.Where(f => f.PayloadCase == Wire.ExecSandboxInput.PayloadOneofCase.Stdin).Select(f => f.Stdin.Length);
+        await Assert.That(frames).IsEquivalentTo(new[] { 256 * 1024, 256 * 1024, 1 });
     }
 
     private static async Task<Wire.ExecSandboxInput> WaitForFrameAsync(FakeCallInvoker invoker)

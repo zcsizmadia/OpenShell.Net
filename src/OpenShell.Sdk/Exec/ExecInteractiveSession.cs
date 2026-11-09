@@ -69,7 +69,7 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
     {
         while (!data.IsEmpty)
         {
-            var chunk = data.Length > MaxFrameBytes ? data[..MaxFrameBytes] : data;
+            var chunk = data[..Math.Min(data.Length, MaxFrameBytes)];
             data = data[chunk.Length..];
 
             // The gRPC writer serializes the frame before the awaited write completes, so wrapping is safe.
@@ -120,43 +120,8 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         using var linked = LinkToSession(cancellationToken);
         var token = linked.Token;
         var sawExit = false;
-        while (true)
+        while (await MoveNextAsync(token, cancellationToken).ConfigureAwait(false))
         {
-            bool moved;
-            try
-            {
-                moved = await _call.ResponseStream.MoveNext(token).ConfigureAwait(false);
-            }
-            catch (RpcException e)
-            {
-                var mapped = ClientCore.Map(e, token);
-                if (mapped is OperationCanceledException canceled)
-                {
-                    _exit.TrySetCanceled(canceled.CancellationToken);
-                }
-                else
-                {
-                    _exit.TrySetException(mapped);
-                }
-
-                throw mapped;
-            }
-            catch (OperationCanceledException e)
-            {
-                _exit.TrySetCanceled(e.CancellationToken);
-                throw;
-            }
-            catch (ObjectDisposedException)
-            {
-                _exit.TrySetCanceled(cancellationToken);
-                throw new OperationCanceledException("the interactive session was closed");
-            }
-
-            if (!moved)
-            {
-                break;
-            }
-
             var ev = _call.ResponseStream.Current;
             switch (ev.PayloadCase)
             {
@@ -179,6 +144,39 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
             var error = new OpenShellException(OpenShellErrorKind.Unavailable, "exec stream ended without an exit event");
             _exit.TrySetException(error);
             throw error;
+        }
+    }
+
+    /// <summary>Advances the response stream; a failure also settles <see cref="ExitCode"/>.</summary>
+    private async Task<bool> MoveNextAsync(CancellationToken token, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _call.ResponseStream.MoveNext(token).ConfigureAwait(false);
+        }
+        catch (RpcException e)
+        {
+            var mapped = ClientCore.Map(e, token);
+            if (mapped is OperationCanceledException canceled)
+            {
+                _exit.TrySetCanceled(canceled.CancellationToken);
+            }
+            else
+            {
+                _exit.TrySetException(mapped);
+            }
+
+            throw mapped;
+        }
+        catch (OperationCanceledException e)
+        {
+            _exit.TrySetCanceled(e.CancellationToken);
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            _exit.TrySetCanceled(cancellationToken);
+            throw new OperationCanceledException("the interactive session was closed");
         }
     }
 
@@ -234,7 +232,7 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         }
         catch (ObjectDisposedException)
         {
-            _exit.TrySetCanceled(cancellationToken);
+            // Only DisposeAsync disposes the source, and it settles the exit code itself.
             throw new OperationCanceledException("the interactive session was closed");
         }
     }
