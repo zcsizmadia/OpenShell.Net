@@ -243,6 +243,28 @@ public class SandboxFeatureTests
         await Assert.That(banner).StartsWith("SSH-2.0-");
     }
 
+    [Test]
+    [Timeout(600_000)]
+    public async Task Exec_python_runs_a_script(CancellationToken cancellationToken)
+    {
+        using var client = GatewayFixture.Connect();
+        await using var sandbox = await TestSandbox.CreateAsync(client, "dn-python", cancellationToken);
+        var probe = await client.Exec.RunAsync(sandbox.Name, ["/bin/sh", "-c", "command -v python3"], cancellationToken: cancellationToken);
+        if (!probe.Succeeded)
+        {
+            Skip.Test($"the sandbox image {GatewayFixture.Image} has no python3");
+        }
+
+        var result = await client.Exec.ExecPythonAsync(
+            sandbox.Name,
+            "import sys; print(sum(int(a) for a in sys.argv[1:]))",
+            new PythonExecOptions { Interpreter = "python3", Arguments = ["2", "40"] },
+            cancellationToken);
+
+        await Assert.That(result.ExitCode).IsEqualTo(0);
+        await Assert.That(result.StdoutText.Trim()).IsEqualTo("42");
+    }
+
     private static async Task<string> EchoAsync(Stream stream, string text, CancellationToken cancellationToken)
     {
         await stream.WriteAsync(Encoding.UTF8.GetBytes(text + "\n"), cancellationToken);
