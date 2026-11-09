@@ -171,7 +171,7 @@ var client = new OpenShellClient(new OpenShellClientOptions
 
 ### Use a registered gateway
 
-`GatewayClient.Connect(name)` builds a client from a gateway the OpenShell CLI registered on disk, including its authentication mode, mTLS bundle, and cached tokens. Pass no name to use the active gateway. It renews an expired OIDC token with the stored refresh token and writes the rotation back so the CLI stays in sync.
+`GatewayClient.Connect(name)` builds a client from a gateway the OpenShell CLI registered on disk, including its authentication mode, mTLS bundle, and cached tokens. Pass no name to use the active gateway. It renews an expired OIDC token with the stored refresh token and writes the rotation back so the CLI stays in sync. `oidc_token.json` uses the CLI format (`access_token`, `refresh_token`, `expires_at` in Unix seconds, `issuer`, `client_id`), so one `openshell gateway login` serves both, and a token issued for another issuer or client is never sent.
 
 ```csharp
 using OpenShell.Gateway;

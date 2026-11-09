@@ -1,19 +1,39 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Globalization;
 using System.Text.Json;
 
 namespace OpenShell.Oidc;
 
-/// <summary>The <c>oidc_token.json</c> cache shared with the OpenShell CLI.</summary>
+/// <summary>A token bundle read from <c>oidc_token.json</c>, with the issuer and client it was issued for.</summary>
+/// <param name="Tokens">The tokens.</param>
+/// <param name="Issuer">The OIDC issuer; null when the file does not record one.</param>
+/// <param name="ClientId">The OIDC client id; null when the file does not record one.</param>
+internal sealed record StoredOidcToken(OidcTokens Tokens, string? Issuer, string? ClientId)
+{
+    /// <summary>
+    /// True when the bundle was issued for this issuer (ignoring a trailing slash) and client id. A file that records
+    /// neither, as early SDK builds wrote, matches nothing; the OpenShell CLI cannot read such a file either.
+    /// </summary>
+    public bool IsFor(string issuer, string clientId) =>
+        Issuer is { Length: > 0 } && ClientId is { Length: > 0 }
+        && string.Equals(OidcDiscovery.Normalize(Issuer), OidcDiscovery.Normalize(issuer), StringComparison.Ordinal)
+        && string.Equals(ClientId, clientId, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// The <c>oidc_token.json</c> cache shared with the OpenShell CLI, in the CLI's format (<c>openshell-bootstrap</c>
+/// <c>OidcTokenBundle</c>): <c>access_token</c>, optional <c>refresh_token</c>, optional <c>expires_at</c> in Unix
+/// seconds, <c>issuer</c> and <c>client_id</c>.
+/// </summary>
 internal static class OidcTokenFile
 {
     public const string FileName = "oidc_token.json";
     private static readonly TimeSpan ExpiryLeeway = TimeSpan.FromSeconds(10);
+    private static readonly ulong MaxUnixSeconds = (ulong)DateTimeOffset.MaxValue.ToUnixTimeSeconds();
 
-    /// <summary>Reads the cached tokens regardless of expiry; null when absent or without an access token.</summary>
-    public static OidcTokens? ReadRaw(string directory)
+    /// <summary>Reads the cached bundle regardless of expiry; null when absent or without an access token.</summary>
+    public static StoredOidcToken? Read(string directory)
     {
         var path = Path.Combine(directory, FileName);
         string text;
@@ -46,47 +66,49 @@ internal static class OidcTokenFile
         }
 
         DateTimeOffset? expiry = null;
-        if (!string.IsNullOrEmpty(bundle.Expiry))
+        if (bundle.ExpiresAt is { } seconds)
         {
-            if (!DateTimeOffset.TryParse(bundle.Expiry, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            if (seconds > MaxUnixSeconds)
             {
-                throw new OidcException(OidcFailure.TokenPersist, $"invalid expiry format in {FileName}");
+                throw new OidcException(OidcFailure.TokenPersist, $"expires_at in {FileName} is out of range");
             }
 
-            expiry = parsed;
+            expiry = DateTimeOffset.FromUnixTimeSeconds((long)seconds);
         }
 
-        return new OidcTokens(
+        var tokens = new OidcTokens(
             bundle.AccessToken,
             string.IsNullOrEmpty(bundle.RefreshToken) ? null : bundle.RefreshToken,
             "Bearer",
             expiry);
+        return new StoredOidcToken(tokens, NullIfEmpty(bundle.Issuer), NullIfEmpty(bundle.ClientId));
     }
 
-    /// <summary>Reads the cached tokens, or null when absent or expired (with a 10 s leeway).</summary>
-    public static OidcTokens? ReadValid(string directory, TimeProvider time)
+    /// <summary>
+    /// Reads the cached tokens issued for this issuer and client id, or null when absent, issued for another client,
+    /// or expired (with a 10 s leeway).
+    /// </summary>
+    public static OidcTokens? ReadValid(string directory, string issuer, string clientId, TimeProvider time)
     {
-        var tokens = ReadRaw(directory);
-        return tokens is { ExpiresAt: { } exp } && time.GetUtcNow() > exp - ExpiryLeeway ? null : tokens;
+        if (Read(directory) is not { } stored || !stored.IsFor(issuer, clientId))
+        {
+            return null;
+        }
+
+        return stored.Tokens is { ExpiresAt: { } exp } && time.GetUtcNow() > exp - ExpiryLeeway ? null : stored.Tokens;
     }
 
     /// <summary>Writes the tokens atomically with owner-only permissions where the OS supports them.</summary>
-    public static void Write(string directory, OidcTokens tokens, TimeProvider time)
+    public static void Write(string directory, OidcTokens tokens, string issuer, string clientId)
     {
         var bundle = new OidcTokenBundleDto
         {
             AccessToken = tokens.AccessToken,
             RefreshToken = tokens.RefreshToken,
+            ExpiresAt = tokens.ExpiresAt is { } expiry ? (ulong)Math.Max(expiry.ToUnixTimeSeconds(), 0) : null,
+            Issuer = issuer,
+            ClientId = clientId,
         };
-        if (tokens.ExpiresAt is { } expiry)
-        {
-            bundle.Expiry = expiry.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
-            var remaining = expiry - time.GetUtcNow();
-            if (remaining > TimeSpan.Zero)
-            {
-                bundle.ExpiresIn = (long)remaining.TotalSeconds;
-            }
-        }
 
         var path = Path.Combine(directory, FileName);
         var temp = Path.Combine(directory, $".oidc-token-{Guid.NewGuid():N}.tmp");
@@ -122,4 +144,6 @@ internal static class OidcTokenFile
             }
         }
     }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 }

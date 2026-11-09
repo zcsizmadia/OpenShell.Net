@@ -10,7 +10,7 @@ public static class OidcLogin
 
     /// <summary>
     /// Authorization-code login with PKCE (when advertised). Opens a browser and listens on a loopback port,
-    /// falling back to the paste-the-code flow. A valid cached token is returned without any prompt.
+    /// falling back to the paste-the-code flow. A valid cached token issued for the same issuer and client id is returned without any prompt.
     /// </summary>
     public static async Task<OidcTokens> LoginAsync(OidcOptions options, CancellationToken cancellationToken = default)
     {
@@ -20,7 +20,7 @@ public static class OidcLogin
         {
             try
             {
-                if (OidcTokenFile.ReadValid(cfg.TokenDirectory!, cfg.Time) is { } cached)
+                if (OidcTokenFile.ReadValid(cfg.TokenDirectory!, cfg.Issuer, cfg.ClientId, cfg.Time) is { } cached)
                 {
                     return cached;
                 }
@@ -37,7 +37,7 @@ public static class OidcLogin
             var tokens = await LoginCoreAsync(cfg, deadline.Token).ConfigureAwait(false);
             if (useCache)
             {
-                OidcTokenFile.Write(cfg.TokenDirectory!, tokens, cfg.Time);
+                OidcTokenFile.Write(cfg.TokenDirectory!, tokens, cfg.Issuer, cfg.ClientId);
             }
 
             return tokens;
