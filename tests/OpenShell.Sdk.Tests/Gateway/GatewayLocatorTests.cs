@@ -123,9 +123,22 @@ public class GatewayLocatorTests
     [Arguments("")]
     [Arguments("a/b")]
     [Arguments("a\\b")]
+    [Arguments(".")]
     [Arguments("..")]
-    [Arguments("a.b")]
+    [Arguments(".hidden")]
+    [Arguments("gateway.")]
+    [Arguments("foo..bar")]
     [Arguments("with space")]
+    [Arguments("::1")]
+    [Arguments("nul\0")]
+    [Arguments("con")]
+    [Arguments("con.txt")]
+    [Arguments("PRN")]
+    [Arguments("Aux.local")]
+    [Arguments("NUL")]
+    [Arguments("COM0")]
+    [Arguments("COM1.example.com")]
+    [Arguments("lpt9")]
     [Arguments("üñí")]
     [Arguments("semi;colon")]
     public async Task Gateway_names_cannot_escape_the_registry(string name)
@@ -138,9 +151,17 @@ public class GatewayLocatorTests
     }
 
     [Test]
-    public async Task Valid_names_are_accepted()
+    [Arguments("Prod-1_eu")]
+    [Arguments("gw.example.com")]
+    [Arguments("192.0.2.1")]
+    [Arguments("config.json")]
+    [Arguments("COM10")]
+    [Arguments("CONSOLE")]
+    [Arguments("com1x.example.com")]
+    [Arguments("LPTX")]
+    public async Task Valid_names_are_accepted(string name)
     {
-        GatewayLocator.ValidateName("Prod-1_eu");
+        GatewayLocator.ValidateName(name);
         await Task.CompletedTask;
     }
 
@@ -196,7 +217,7 @@ public class GatewayLocatorTests
         Register(root, "user", "alpha", Metadata());
         Register(root, "sys", "alpha", Metadata());
         Register(root, "sys", "charlie", Metadata());
-        root.Make("user", "gateways", "bad.name");
+        root.Make("user", "gateways", ".bad");
         File.WriteAllText(Path.Combine(root.Make("user"), "active_gateway"), "bravo");
 
         var list = Locator(root).List();
@@ -267,7 +288,7 @@ public class GatewayLocatorTests
     public async Task System_directory_defaults_by_platform_and_can_be_overridden()
     {
         var expected = OperatingSystem.IsWindows() ? null : "/etc/openshell";
-        await Assert.That(new GatewayLocator().SystemConfigDirectory).IsEqualTo(expected);
+        await Assert.That(new GatewayLocator(new GatewayLocatorOptions { GetEnvironmentVariable = _ => null }).SystemConfigDirectory).IsEqualTo(expected);
         await Assert.That(new GatewayLocator(new GatewayLocatorOptions { SystemConfigDirectory = "/custom" }).SystemConfigDirectory).IsEqualTo("/custom");
     }
 
