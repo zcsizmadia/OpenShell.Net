@@ -256,10 +256,10 @@ public class FakeInternalsTests
     public async Task Disposal_stops_pending_timers_and_later_schedules_create_none()
     {
         var time = new FakeTimeProvider();
-        var gateway = new FakeGateway(new FakeGatewayOptions { TimeProvider = time });
+        using var gateway = new FakeGateway(new FakeGatewayOptions { TimeProvider = time });
         gateway.Schedule(TimeSpan.FromSeconds(5));
 
-        gateway.Dispose();
+        gateway.Dispose(); // Explicit: the test is about disposal; the using covers a failed assertion before it.
         gateway.Schedule(TimeSpan.FromSeconds(5));
 
         await Assert.That(gateway.PendingTimers).IsEqualTo(0);
