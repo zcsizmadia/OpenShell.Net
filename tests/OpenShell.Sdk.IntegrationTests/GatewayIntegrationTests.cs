@@ -81,11 +81,7 @@ public class GatewayIntegrationTests
         }
         finally
         {
-            var deletion = await client.Sandboxes.DeleteAsync(name, new DeleteOptions { AllowMissing = true }, CancellationToken.None);
-            if (deletion.Outcome == DeletionOutcome.Accepted)
-            {
-                await client.Sandboxes.WaitDeletedAsync(name, new WaitOptions { ExpectedSandboxId = sandboxId, Timeout = TimeSpan.FromMinutes(2) }, CancellationToken.None);
-            }
+            await TestSandbox.DeleteAsync(client, name, sandboxId);
         }
     }
 }
