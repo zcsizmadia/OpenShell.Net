@@ -191,9 +191,9 @@ public class TransportTests
 
         await Assert.That(ChannelFactory.CreateHandler(options).InnerHandler).IsSameReferenceAs(supplied);
 
-        var channel = ChannelFactory.Create(options);
+        using var channel = ChannelFactory.Create(options);
         await Assert.That(supplied.Disposed).IsFalse();
-        channel.Dispose();
+        channel.Dispose(); // Explicit, to assert the handler is disposed with the channel; the using covers a failed assertion.
         await Assert.That(supplied.Disposed).IsTrue();
     }
 
