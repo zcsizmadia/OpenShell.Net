@@ -64,9 +64,32 @@ jobs:
         if: matrix.build-mode == 'manual'
         run: scripts/ci.sh build
 
+      # A traced C# build extracts the compiler-generated sources too (source generators, under obj/), and paths-ignore
+      # does not apply to traced extraction. So the C# results are written to a file, generated sources are dropped,
+      # and the filtered file is uploaded.
       - name: Analyze
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
+          category: /language:${{ matrix.language }}
+          upload: ${{ matrix.build-mode == 'manual' && 'never' || 'always' }}
+          output: sarif-results
+
+      - name: Drop results in generated sources
+        if: matrix.build-mode == 'manual'
+        run: |
+          for file in sarif-results/*.sarif; do
+            jq '.runs[].results |= map(select(
+                  ([.locations[]?.physicalLocation.artifactLocation.uri // ""] | any(test("(^|/)obj/"))) | not))' \
+              "$file" > "$file.filtered"
+            echo "$(basename "$file"): $(jq '[.runs[].results[]] | length' "$file") results, $(jq '[.runs[].results[]] | length' "$file.filtered") outside generated sources"
+            mv "$file.filtered" "$file"
+          done
+
+      - name: Upload results
+        if: matrix.build-mode == 'manual'
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: sarif-results
           category: /language:${{ matrix.language }}
 
   dependency-review:

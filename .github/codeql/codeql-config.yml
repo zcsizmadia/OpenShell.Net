@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # CodeQL analyses the code we write, tests included. Compiler-generated sources (source generators write them under
-# obj/) and the documentation snippets (illustrative fragments, compiled separately) are left out.
+# obj/) and the documentation snippets (illustrative fragments, compiled separately) are left out. For the traced C#
+# build paths-ignore has no effect, so codeql.yml also drops results in obj/ before uploading.
 name: OpenShell.Net
 
 queries:
