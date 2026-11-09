@@ -7,6 +7,7 @@ namespace OpenShell.IntegrationTests;
 public class ProviderTests
 {
     private const string PlaceholderPrefix = "openshell:resolve:env:";
+    private const string TokenKey = "DN_IT_TOKEN";
 
     [Test]
     [Timeout(300_000)]
@@ -16,28 +17,30 @@ public class ProviderTests
         var run = GatewayFixture.UniqueName("run");
         var name = GatewayFixture.UniqueName("dn-prov");
         const string Secret = "sk-dotnet-it-original";
+        var type = await ImportProfileAsync(client, withEndpoint: false, cancellationToken);
         try
         {
             var created = await client.Providers.CreateAsync(
                 new Provider
                 {
                     Name = name,
-                    Type = "openai",
-                    Credentials = new Dictionary<string, string> { ["OPENAI_API_KEY"] = Secret },
+                    Type = type,
+                    ProfileWorkspace = GatewayFixture.Workspace,
+                    Credentials = new Dictionary<string, string> { [TokenKey] = Secret },
                     Config = new Dictionary<string, string> { ["DN_IT_SETTING"] = "one" },
                     Labels = new Dictionary<string, string> { ["dotnet-it-run"] = run },
                 },
                 cancellationToken: cancellationToken);
             await Assert.That(created.Name).IsEqualTo(name);
-            await Assert.That(created.Type).IsEqualTo("openai");
+            await Assert.That(created.Type).IsEqualTo(type);
             await Assert.That(created.Id).IsNotEmpty();
             await Assert.That(created.Workspace).IsEqualTo(GatewayFixture.Workspace);
 
             // Reads keep the credential keys but never return the secret.
             var fetched = await client.Providers.GetAsync(name, cancellationToken);
             await Assert.That(fetched.Id).IsEqualTo(created.Id);
-            await Assert.That(fetched.Credentials.Keys).Contains("OPENAI_API_KEY");
-            await Assert.That(fetched.Credentials["OPENAI_API_KEY"]).IsNotEqualTo(Secret);
+            await Assert.That(fetched.Credentials.Keys).Contains(TokenKey);
+            await Assert.That(fetched.Credentials[TokenKey]).IsNotEqualTo(Secret);
             await Assert.That(fetched.Config["DN_IT_SETTING"]).IsEqualTo("one");
             await Assert.That(fetched.Labels["dotnet-it-run"]).IsEqualTo(run);
             await Assert.That(fetched.ResourceVersion).IsGreaterThan(0ul);
@@ -48,27 +51,27 @@ public class ProviderTests
 
             // An update merges: config changes, and the credential it does not mention stays.
             var updated = await client.Providers.UpdateAsync(
-                new Provider { Name = name, Type = "openai", Config = new Dictionary<string, string> { ["DN_IT_SETTING"] = "two" } },
+                new Provider { Name = name, Type = type, Config = new Dictionary<string, string> { ["DN_IT_SETTING"] = "two" } },
                 cancellationToken: cancellationToken);
             await Assert.That(updated.MutationId).IsNotEmpty();
             await Assert.That(updated.TargetReceipts).IsEmpty();
             await Assert.That(updated.Provider.Config["DN_IT_SETTING"]).IsEqualTo("two");
-            await Assert.That(updated.Provider.Credentials.Keys).Contains("OPENAI_API_KEY");
+            await Assert.That(updated.Provider.Credentials.Keys).Contains(TokenKey);
             await Assert.That(updated.Provider.ResourceVersion).IsGreaterThan(fetched.ResourceVersion);
 
             // EnsureAsync updates the existing provider in place.
             var ensured = await client.Providers.EnsureAsync(
-                new Provider { Name = name, Type = "openai", Config = new Dictionary<string, string> { ["DN_IT_SETTING"] = "three" } },
+                new Provider { Name = name, Type = type, Config = new Dictionary<string, string> { ["DN_IT_SETTING"] = "three" } },
                 cancellationToken);
             await Assert.That(ensured.Id).IsEqualTo(created.Id);
             await Assert.That(ensured.Config["DN_IT_SETTING"]).IsEqualTo("three");
 
             var typeChange = await Assert.That(async () => await client.Providers.UpdateAsync(
-                new Provider { Name = name, Type = "nvidia" }, cancellationToken: cancellationToken)).Throws<OpenShellException>();
+                new Provider { Name = name, Type = "dn-it-other-type" }, cancellationToken: cancellationToken)).Throws<OpenShellException>();
             await Assert.That(typeChange!.Kind).IsEqualTo(OpenShellErrorKind.InvalidArgument);
 
             var duplicate = await Assert.That(async () => await client.Providers.CreateAsync(
-                new Provider { Name = name, Type = "openai", Credentials = new Dictionary<string, string> { ["OPENAI_API_KEY"] = Secret } },
+                new Provider { Name = name, Type = type, Credentials = new Dictionary<string, string> { [TokenKey] = Secret } },
                 cancellationToken: cancellationToken)).Throws<OpenShellException>();
             await Assert.That(duplicate!.IsAlreadyExists).IsTrue();
 
@@ -81,8 +84,8 @@ public class ProviderTests
             try
             {
                 var exported = await client.Providers.GetCredentialsAsync(
-                    name, ["OPENAI_API_KEY"], new ProviderCredentialsOptions { Workspace = GatewayFixture.Workspace }, cancellationToken);
-                await Assert.That(exported["OPENAI_API_KEY"].Value).IsEqualTo(Secret);
+                    name, [TokenKey], new ProviderCredentialsOptions { Workspace = GatewayFixture.Workspace }, cancellationToken);
+                await Assert.That(exported[TokenKey].Value).IsEqualTo(Secret);
             }
             catch (OpenShellException e) when (e.Kind is OpenShellErrorKind.PermissionDenied or OpenShellErrorKind.Unauthenticated)
             {
@@ -99,6 +102,7 @@ public class ProviderTests
         finally
         {
             await DeleteProviderAsync(client, name);
+            await DeleteProfileAsync(client, type);
         }
     }
 
@@ -125,9 +129,9 @@ public class ProviderTests
             $"{id}.yaml");
         try
         {
-            // The built-in catalog is visible from the workspace.
+            // The gateway release ships no built-in profiles, so the catalog starts without this one.
             var catalog = await profiles.List(new ListOptions { PageSize = 200 }).ToListAsync(cancellationToken);
-            await Assert.That(catalog.Select(p => p.Id)).Contains("nvidia");
+            await Assert.That(catalog.Select(p => p.Id)).DoesNotContain(id);
 
             var lint = await profiles.LintAsync([item], cancellationToken);
             await Assert.That(lint.Valid).IsTrue();
@@ -202,8 +206,9 @@ public class ProviderTests
         using var client = GatewayFixture.Connect();
         var providerName = GatewayFixture.UniqueName("dn-attach");
         var readiness = TimeSpan.FromMinutes(3);
+        var type = await ImportProfileAsync(client, withEndpoint: true, cancellationToken);
         await client.Providers.CreateAsync(
-            new Provider { Name = providerName, Type = "nvidia", Credentials = new Dictionary<string, string> { ["NVIDIA_API_KEY"] = "nvapi-dotnet-it" } },
+            new Provider { Name = providerName, Type = type, ProfileWorkspace = GatewayFixture.Workspace, Credentials = new Dictionary<string, string> { [TokenKey] = "nvapi-dotnet-it" } },
             cancellationToken: cancellationToken);
         try
         {
@@ -237,7 +242,7 @@ public class ProviderTests
 
             // Updating an attached provider returns one receipt per sandbox.
             var update = await client.Providers.UpdateAsync(
-                new Provider { Name = providerName, Type = "nvidia", Credentials = new Dictionary<string, string> { ["NVIDIA_API_KEY"] = "nvapi-dotnet-it-rotated" } },
+                new Provider { Name = providerName, Type = type, Credentials = new Dictionary<string, string> { [TokenKey] = "nvapi-dotnet-it-rotated" } },
                 cancellationToken: cancellationToken);
             await Assert.That(update.TargetReceipts.Count).IsEqualTo(1);
             await Assert.That(update.TargetReceipts[0].Desired!.Sandbox).IsEqualTo(sandbox.Name);
@@ -266,11 +271,41 @@ public class ProviderTests
         finally
         {
             await DeleteProviderAsync(client, providerName);
+            await DeleteProfileAsync(client, type);
         }
     }
 
     private static async Task<string> ReadKeyAsync(TestSandbox sandbox, CancellationToken cancellationToken) =>
-        (await sandbox.ShAsync("printf '%s' \"${NVIDIA_API_KEY:-NOT_SET}\"", cancellationToken)).Trim();
+        (await sandbox.ShAsync("printf '%s' \"${DN_IT_TOKEN:-NOT_SET}\"", cancellationToken)).Trim();
+
+    /// <summary>
+    /// Imports a workspace profile that declares <see cref="TokenKey"/>; the gateway release ships no built-in profiles.
+    /// Credentials of a profile without endpoints are withheld from sandboxes unless policy binds them, so a test that
+    /// injects credentials asks for an endpoint.
+    /// </summary>
+    private static async Task<string> ImportProfileAsync(OpenShellClient client, bool withEndpoint, CancellationToken cancellationToken)
+    {
+        var id = GatewayFixture.UniqueName("dn-it-type");
+        var profile = new ProviderProfile
+        {
+            Id = id,
+            DisplayName = "dotnet integration provider type",
+            Category = ProviderProfileCategory.Other,
+            Credentials = [new ProfileCredential { Name = "token", EnvVars = [TokenKey], Required = true }],
+            Endpoints = withEndpoint ? [new Openshell.Sandbox.V1.NetworkEndpoint { Host = "dn-it.example.com", Port = 443 }] : [],
+            Binaries = withEndpoint ? [new Openshell.Sandbox.V1.NetworkBinary { Path = "/usr/bin/curl" }] : [],
+        };
+        var imported = await client.Providers.Profiles.ImportAsync([new ProfileImportItem(profile, $"{id}.yaml")], cancellationToken: cancellationToken);
+        if (!imported.Imported)
+        {
+            throw new InvalidOperationException($"profile import failed: {string.Join("; ", imported.Diagnostics.Select(d => $"{d.Field}: {d.Message}"))}");
+        }
+
+        return id;
+    }
+
+    private static async Task DeleteProfileAsync(OpenShellClient client, string id) =>
+        await client.Providers.Profiles.DeleteAsync(id, new DeleteOptions { AllowMissing = true }, CancellationToken.None);
 
     private static async Task DeleteProviderAsync(OpenShellClient client, string name) =>
         await client.Providers.DeleteAsync(name, new DeleteOptions { AllowMissing = true }, CancellationToken.None);
