@@ -406,7 +406,7 @@ internal static class RemotePath
         }
 
         var slash = path.LastIndexOf('/');
-        var name = slash < 0 ? path : path[(slash + 1)..];
+        var name = path[(slash + 1)..]; // slash is -1 when there is none, so this is the whole path.
         if (name is "." or "..")
         {
             throw new ArgumentException("remote path must name a file", nameof(path));

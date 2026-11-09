@@ -266,6 +266,83 @@ public class FileUploadTests
         await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", Path.Combine(dir, $"missing-{Guid.NewGuid():N}"), "/x")).Throws<DirectoryNotFoundException>();
     }
 
+    [Test]
+    public async Task Local_validation_failures_start_no_remote_session_and_say_why()
+    {
+        var invoker = Tar.UploadTarget((_, _) => { });
+        using var client = ClientTests.NewClient(invoker);
+        var dir = Path.GetTempPath();
+        var missing = Path.Combine(dir, $"missing-{Guid.NewGuid():N}");
+
+        var isDirectory = await Assert.That(async () => await client.Files.UploadAsync("sb", dir, "/x")).Throws<ArgumentException>();
+        await Assert.That(isDirectory!.Message).Contains("is a directory");
+        var noFile = await Assert.That(async () => await client.Files.UploadAsync("sb", missing, "/x")).Throws<FileNotFoundException>();
+        await Assert.That(noFile!.Message).Contains("local file not found");
+        await Assert.That(noFile.FileName).IsEqualTo(missing);
+        var noDirectory = await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", missing, "/x")).Throws<DirectoryNotFoundException>();
+        await Assert.That(noDirectory!.Message).Contains("local directory not found");
+
+        await Assert.That(invoker.DuplexCalls.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    [Arguments("/a\0b", "must not contain NUL")]
+    [Arguments("/dir/", "not a directory")]
+    [Arguments("/dir/.", "must name a file")]
+    [Arguments("..", "must name a file")]
+    public async Task Invalid_remote_file_paths_are_rejected_with_a_reason(string remotePath, string reason)
+    {
+        using var client = ClientTests.NewClient(Tar.UploadTarget((_, _) => { }));
+
+        var ex = await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream(), remotePath)).Throws<ArgumentException>();
+
+        await Assert.That(ex!.Message).Contains(reason);
+        await Assert.That(ex.ParamName).IsEqualTo("path");
+    }
+
+    [Test]
+    public async Task A_remote_directory_with_NUL_is_rejected_with_a_reason()
+    {
+        using var client = ClientTests.NewClient(Tar.UploadTarget((_, _) => { }));
+
+        var ex = await Assert.That(async () => await client.Files.UploadDirectoryAsync("sb", Path.GetTempPath(), "/a\0b")).Throws<ArgumentException>();
+
+        await Assert.That(ex!.Message).Contains("must not contain NUL");
+    }
+
+    [Test]
+    public async Task Upload_stream_defaults_to_mode_0644()
+    {
+        byte[]? archive = null;
+        using var client = ClientTests.NewClient(Tar.UploadTarget((a, _) => archive = a));
+
+        await client.Files.UploadAsync("sb", new MemoryStream([1]), "/f.bin");
+
+        var (_, mode) = await ReadEntryAsync(archive!);
+        await Assert.That(mode).IsEqualTo(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+    }
+
+    [Test]
+    public async Task Upload_keeps_only_the_first_4_KiB_of_stderr()
+    {
+        var invoker = new FakeCallInvoker().Duplex<Wire.ExecSandboxInput, Wire.ExecSandboxEvent>("ExecSandboxInteractive", async ch =>
+        {
+            await foreach (var _ in ch.ReadAllAsync())
+            {
+            }
+
+            ch.Send(Interactive.Err(new string('e', 4096)));
+            ch.Send(Interactive.Err("TAIL"));
+            ch.Send(Interactive.Exit(1));
+        });
+        using var client = ClientTests.NewClient(invoker);
+
+        var ex = await Assert.That(async () => await client.Files.UploadAsync("sb", new MemoryStream([1]), "/x")).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Message).Contains(new string('e', 4096));
+        await Assert.That(ex.Message).DoesNotContain("TAIL");
+    }
+
     private static async Task<(string Name, UnixFileMode Mode)> ReadEntryAsync(byte[] archive)
     {
         await using var reader = new TarReader(new MemoryStream(archive));
@@ -411,7 +488,8 @@ public class FileDownloadTests
         var root = TempPath("tree");
         try
         {
-            await Assert.That(async () => await directory.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+            var tree = await Assert.That(async () => await directory.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+            await Assert.That(tree!.Message).Contains("prematurely");
         }
         finally
         {
@@ -424,10 +502,12 @@ public class FileDownloadTests
     {
         using var client = ClientTests.NewClient(Tar.DownloadSource([]));
 
-        await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", " ")).Throws<ArgumentException>();
+        var file = await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", " ")).Throws<ArgumentException>();
+        await Assert.That(file!.ParamName).IsEqualTo("localPath");
         await Assert.That(async () => await client.Files.DownloadAsync("sb", "", new MemoryStream())).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.DownloadAsync("sb", "/x", (Stream)null!)).Throws<ArgumentNullException>();
-        await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/x", " ")).Throws<ArgumentException>();
+        var directory = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/x", " ")).Throws<ArgumentException>();
+        await Assert.That(directory!.ParamName).IsEqualTo("localDirectory");
         await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "", TempPath())).Throws<ArgumentException>();
         await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/a\0b", TempPath())).Throws<ArgumentException>();
     }
@@ -461,25 +541,129 @@ public class FileDownloadTests
     }
 
     [Test]
+    public async Task Download_directory_creates_empty_directories_and_parents_without_entries()
+    {
+        var archive = await Tar.BuildAsync(Tar.Dir("./empty/"), Tar.File("./implied/deep/f.txt", "F"));
+        using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
+        var root = TempPath("tree");
+        try
+        {
+            await client.Files.DownloadDirectoryAsync("sb", "/srv", root);
+
+            await Assert.That(Directory.Exists(Path.Combine(root, "empty"))).IsTrue();
+            await Assert.That(await File.ReadAllTextAsync(Path.Combine(root, "implied", "deep", "f.txt"))).IsEqualTo("F");
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(root)!, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task A_non_zero_exit_after_a_complete_archive_still_fails_the_download()
+    {
+        var file = await Tar.BuildAsync(Tar.File("a.txt", "x"));
+        using var single = ClientTests.NewClient(Tar.DownloadSource(file, exitCode: 3, stderr: "tar: late failure"));
+        var ex = await Assert.That(async () => await single.Files.DownloadAsync("sb", "/a.txt", new MemoryStream())).Throws<OpenShellException>();
+        await Assert.That(ex!.Message).Contains("code 3");
+        await Assert.That(ex.Message).Contains("late failure");
+
+        var tree = await Tar.BuildAsync(Tar.Dir("./"), Tar.File("./a.txt", "x"));
+        using var directory = ClientTests.NewClient(Tar.DownloadSource(tree, exitCode: 4));
+        var root = TempPath("tree");
+        try
+        {
+            var dirEx = await Assert.That(async () => await directory.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<OpenShellException>();
+            await Assert.That(dirEx!.Message).Contains("code 4");
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(root)!, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task ExecStdoutStream_keeps_only_the_first_4_KiB_of_stderr()
+    {
+        var stream = new ExecStdoutStream(Events(
+            new ExecOutput(true, Encoding.UTF8.GetBytes(new string('e', 4096))),
+            new ExecOutput(true, "TAIL"u8.ToArray()),
+            new ExecExit(1)));
+        await using (stream)
+        {
+            var ex = await Assert.That(async () => await stream.ReadAsync(new byte[16])).Throws<OpenShellException>();
+
+            await Assert.That(ex!.Message).Contains(new string('e', 4096));
+            await Assert.That(ex.Message).DoesNotContain("TAIL");
+        }
+    }
+
+    [Test]
+    public async Task ExecStdoutStream_does_not_advance_the_events_after_the_end()
+    {
+        var events = new StrictEvents(new ExecOutput(false, "ab"u8.ToArray()));
+        var stream = new ExecStdoutStream(events);
+        await using (stream)
+        {
+            var buffer = new byte[8];
+            await Assert.That(await stream.ReadAsync(buffer)).IsEqualTo(2);
+            await Assert.That(await stream.ReadAsync(buffer)).IsEqualTo(0);
+            await Assert.That(await stream.ReadAsync(buffer)).IsEqualTo(0);
+            await stream.DrainAsync(CancellationToken.None);
+        }
+    }
+
+    private static async IAsyncEnumerator<ExecEvent> Events(params ExecEvent[] events)
+    {
+        foreach (var e in events)
+        {
+            await Task.Yield();
+            yield return e;
+        }
+    }
+
+    /// <summary>An event source that fails if it is advanced again after reporting its end.</summary>
+    private sealed class StrictEvents(params ExecEvent[] events) : IAsyncEnumerator<ExecEvent>
+    {
+        private int _index = -1;
+
+        public ExecEvent Current => events[_index];
+
+        public ValueTask<bool> MoveNextAsync()
+        {
+            if (_index >= events.Length)
+            {
+                throw new InvalidOperationException("advanced past the end");
+            }
+
+            _index++;
+            return ValueTask.FromResult(_index < events.Length);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    [Test]
     public async Task Download_directory_rejects_traversal_absolute_names_and_links()
     {
-        var cases = new (string Name, (string Name, string? Content, TarEntryType Type, string? Link) Entry)[]
+        var cases = new (string Name, (string Name, string? Content, TarEntryType Type, string? Link) Entry, string Reason)[]
         {
-            ("parent traversal", Tar.File("../evil.txt", "x")),
-            ("nested traversal", Tar.File("a/../../evil.txt", "x")),
-            ("backslash traversal", Tar.File("a\\..\\..\\evil.txt", "x")),
-            ("absolute", Tar.File("/etc/evil.txt", "x")),
-            ("symlink", ("link", null, TarEntryType.SymbolicLink, "/etc")),
-            ("hardlink", ("hard", null, TarEntryType.HardLink, "target")),
+            ("parent traversal", Tar.File("../evil.txt", "x"), "unsafe tar entry name"),
+            ("nested traversal", Tar.File("a/../../evil.txt", "x"), "unsafe tar entry name"),
+            ("backslash traversal", Tar.File("a\\..\\..\\evil.txt", "x"), "unsafe tar entry name"),
+            ("absolute", Tar.File("/etc/evil.txt", "x"), "unsafe tar entry name"),
+            ("symlink", ("link", null, TarEntryType.SymbolicLink, "/etc"), "refusing to extract link entry 'link'"),
+            ("hardlink", ("hard", null, TarEntryType.HardLink, "target"), "refusing to extract link entry 'hard'"),
         };
-        foreach (var (name, entry) in cases)
+        foreach (var (name, entry, reason) in cases)
         {
             var archive = await Tar.BuildAsync(Tar.File("ok.txt", "fine"), entry);
             using var client = ClientTests.NewClient(Tar.DownloadSource(archive));
             var root = TempPath("tree");
             try
             {
-                await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+                var ex = await Assert.That(async () => await client.Files.DownloadDirectoryAsync("sb", "/srv", root)).Throws<InvalidDataException>();
+                await Assert.That(ex!.Message).Contains(reason);
                 await Assert.That(File.Exists(Path.Combine(Path.GetDirectoryName(root)!, "evil.txt"))).IsFalse();
                 await Assert.That(name).IsNotNull();
             }
@@ -499,9 +683,13 @@ public class FileDownloadTests
         await Assert.That(FileClient.SafeTarget(root, "./c.txt")).IsEqualTo(Path.Combine(root, "c.txt"));
         await Assert.That(FileClient.SafeTarget(root, "./")).IsNull();
         await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, ".")).IsNull();
+        await Assert.That(FileClient.SafeTarget(root + Path.DirectorySeparatorChar, "d.txt")).IsEqualTo(Path.Combine(root, "d.txt"));
         await Assert.That(() => FileClient.SafeTarget(root, "a\0b")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "..")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "x/../../y")).Throws<InvalidDataException>();
+
+        // A ".." segment is refused even when the resolved path would stay inside the root.
+        await Assert.That(() => FileClient.SafeTarget(root, "x/../y")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "/abs")).Throws<InvalidDataException>();
         await Assert.That(() => FileClient.SafeTarget(root, "\\abs")).Throws<InvalidDataException>();
     }
@@ -522,7 +710,8 @@ public class FileDownloadTests
             await Assert.That(await stream.ReadAsync(small.AsMemory())).IsEqualTo(0);
             await stream.DrainAsync(CancellationToken.None);
             await Assert.That(stream.CanRead && !stream.CanWrite && !stream.CanSeek).IsTrue();
-            await Assert.That(() => stream.Read(small, 0, 1)).Throws<NotSupportedException>();
+            var read = await Assert.That(() => stream.Read(small, 0, 1)).Throws<NotSupportedException>();
+            await Assert.That(read!.Message).Contains("ReadAsync");
             await Assert.That(() => stream.Write(small, 0, 1)).Throws<NotSupportedException>();
             await Assert.That(() => stream.Seek(0, SeekOrigin.Begin)).Throws<NotSupportedException>();
             await Assert.That(() => stream.SetLength(0)).Throws<NotSupportedException>();
@@ -549,7 +738,8 @@ public class FileDownloadTests
         await Assert.That(stdin.CanWrite).IsTrue();
         await Assert.That(stdin.CanSeek).IsFalse();
         await Assert.That(() => stdin.Read(new byte[1], 0, 1)).Throws<NotSupportedException>();
-        await Assert.That(() => stdin.Write(new byte[1], 0, 1)).Throws<NotSupportedException>();
+        var write = await Assert.That(() => stdin.Write(new byte[1], 0, 1)).Throws<NotSupportedException>();
+        await Assert.That(write!.Message).Contains("WriteAsync");
         await Assert.That(() => stdin.Seek(0, SeekOrigin.Begin)).Throws<NotSupportedException>();
         await Assert.That(() => stdin.SetLength(0)).Throws<NotSupportedException>();
         await Assert.That(() => stdin.Length).Throws<NotSupportedException>();
