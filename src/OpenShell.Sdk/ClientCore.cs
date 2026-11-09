@@ -46,34 +46,30 @@ internal sealed class ClientCore : IDisposable
 
     public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
-    public CallOptions CallOptions(CancellationToken cancellationToken, TimeSpan? timeout = null, Metadata? headers = null)
-    {
-        var effective = timeout ?? Options.DefaultTimeout;
-        return new CallOptions(
+    /// <summary>Options for a unary call: <see cref="OpenShellClientOptions.DefaultTimeout"/> becomes its deadline.</summary>
+    private CallOptions UnaryCallOptions(Metadata? headers, CancellationToken cancellationToken) =>
+        new(
             headers: headers,
-            deadline: effective is { } t ? DateTime.UtcNow + t : null,
+            deadline: Options.DefaultTimeout is { } t ? DateTime.UtcNow + t : null,
             cancellationToken: cancellationToken);
-    }
 
     /// <summary>Runs a unary call, retrying once when the auth provider can recover from <c>Unauthenticated</c>.</summary>
     public async ValueTask<TResponse> UnaryAsync<TResponse>(
         Func<CallOptions, AsyncUnaryCall<TResponse>> call,
-        CancellationToken cancellationToken,
-        TimeSpan? timeout = null) =>
-        (await UnaryCoreAsync(call, null, readHeaders: false, timeout, cancellationToken).ConfigureAwait(false)).Response;
+        CancellationToken cancellationToken) =>
+        (await UnaryCoreAsync(call, null, readHeaders: false, cancellationToken).ConfigureAwait(false)).Response;
 
     /// <summary>Like <see cref="UnaryAsync{TResponse}"/>, sending request headers and returning the response headers too.</summary>
     public ValueTask<(TResponse Response, Metadata Headers)> UnaryWithHeadersAsync<TResponse>(
         Func<CallOptions, AsyncUnaryCall<TResponse>> call,
         Metadata headers,
         CancellationToken cancellationToken) =>
-        UnaryCoreAsync(call, headers, readHeaders: true, null, cancellationToken);
+        UnaryCoreAsync(call, headers, readHeaders: true, cancellationToken);
 
     private async ValueTask<(TResponse Response, Metadata Headers)> UnaryCoreAsync<TResponse>(
         Func<CallOptions, AsyncUnaryCall<TResponse>> call,
         Metadata? headers,
         bool readHeaders,
-        TimeSpan? timeout,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
@@ -81,7 +77,7 @@ internal sealed class ClientCore : IDisposable
         {
             try
             {
-                using var active = call(CallOptions(cancellationToken, timeout, headers));
+                using var active = call(UnaryCallOptions(headers, cancellationToken));
                 var response = await active.ResponseAsync.ConfigureAwait(false);
                 return (response, readHeaders ? await active.ResponseHeadersAsync.ConfigureAwait(false) : Metadata.Empty);
             }
@@ -115,29 +111,26 @@ internal sealed class ClientCore : IDisposable
         try
         {
             var stream = active.ResponseStream;
-            while (true)
+            while (await MoveNextAsync(stream, cancellationToken).ConfigureAwait(false))
             {
-                bool moved;
-                try
-                {
-                    moved = await stream.MoveNext(cancellationToken).ConfigureAwait(false);
-                }
-                catch (RpcException e)
-                {
-                    throw Map(e, cancellationToken);
-                }
-
-                if (!moved)
-                {
-                    yield break;
-                }
-
                 yield return stream.Current;
             }
         }
         finally
         {
             active.Dispose();
+        }
+    }
+
+    private static async Task<bool> MoveNextAsync<TResponse>(IAsyncStreamReader<TResponse> stream, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await stream.MoveNext(cancellationToken).ConfigureAwait(false);
+        }
+        catch (RpcException e)
+        {
+            throw Map(e, cancellationToken);
         }
     }
 
@@ -211,24 +204,25 @@ internal sealed class ClientCore : IDisposable
         }
     }
 
-    private async ValueTask<AsyncServerStreamingCall<TResponse>> OpenStreamAsync<TResponse>(
+    private static async ValueTask<AsyncServerStreamingCall<TResponse>> OpenStreamAsync<TResponse>(
         Func<CallOptions, AsyncServerStreamingCall<TResponse>> call,
         string? replica,
         Action? onUnrouted,
         CancellationToken cancellationToken)
     {
+        // Streams have no deadline: DefaultTimeout applies to unary calls only.
         if (replica is null)
         {
-            return call(CallOptions(cancellationToken));
+            return call(new CallOptions(cancellationToken: cancellationToken));
         }
 
-        var routed = call(CallOptions(cancellationToken, headers: Transport.OwnerRouting.Route(replica)));
+        var routed = call(new CallOptions(headers: Transport.OwnerRouting.Route(replica), cancellationToken: cancellationToken));
         if (await Transport.OwnerRouting.UnansweredAsync(routed.ResponseHeadersAsync).ConfigureAwait(false) is { } failure
             && Transport.OwnerRouting.RetryUnrouted(failure))
         {
             routed.Dispose();
             onUnrouted?.Invoke();
-            return call(CallOptions(cancellationToken));
+            return call(new CallOptions(cancellationToken: cancellationToken));
         }
 
         // Answered, or failed for a reason the gateway owns: reading the stream reports it.

@@ -155,6 +155,103 @@ public class ClientTests
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Auth);
     }
 
+    /// <summary>An auth provider whose recovery is scripted.</summary>
+    private sealed class ScriptedRecovery(Func<bool> recover) : IAuthProvider
+    {
+        public int Recoveries { get; private set; }
+
+        public bool SendsCredentials => true;
+
+        public ValueTask ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+
+        public ValueTask<bool> TryRecoverAsync(CancellationToken cancellationToken)
+        {
+            Recoveries++;
+            return ValueTask.FromResult(recover());
+        }
+    }
+
+    [Test]
+    public async Task Only_unauthenticated_failures_try_recovery()
+    {
+        var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.NotFound, "gone");
+        var auth = new ScriptedRecovery(() => true);
+        using var client = NewClient(invoker, auth: auth);
+
+        var ex = await Assert.That(async () => await client.Health.CheckAsync()).Throws<OpenShellException>();
+
+        await Assert.That(ex!.IsNotFound).IsTrue();
+        await Assert.That(auth.Recoveries).IsEqualTo(0);
+        await Assert.That(invoker.CountOf("Health")).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Recovery_is_attempted_once_even_when_it_keeps_succeeding()
+    {
+        var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.Unauthenticated, "still bad");
+        var auth = new ScriptedRecovery(() => true);
+        using var client = NewClient(invoker, auth: auth);
+
+        var ex = await Assert.That(async () => await client.Health.CheckAsync()).Throws<OpenShellException>();
+
+        await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Unauthenticated);
+        await Assert.That(auth.Recoveries).IsEqualTo(1);
+        await Assert.That(invoker.CountOf("Health")).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Recovery_exceptions_are_wrapped_unless_already_typed()
+    {
+        var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.Unauthenticated, "x");
+        var cause = new InvalidOperationException("idp down");
+        var typed = new OpenShellException(OpenShellErrorKind.PermissionDenied, "typed");
+
+        using (var client = NewClient(invoker, auth: new ScriptedRecovery(() => throw cause)))
+        {
+            var ex = await Assert.That(async () => await client.Health.CheckAsync()).Throws<OpenShellException>();
+            await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.Auth);
+            await Assert.That(ex.Message).IsEqualTo("credential recovery failed");
+            await Assert.That(ex.InnerException).IsSameReferenceAs(cause);
+        }
+
+        using (var client = NewClient(invoker, auth: new ScriptedRecovery(() => throw typed)))
+        {
+            var ex = await Assert.That(async () => await client.Health.CheckAsync()).Throws<OpenShellException>();
+            await Assert.That(ex).IsSameReferenceAs(typed);
+        }
+
+        using (var client = NewClient(invoker, auth: new ScriptedRecovery(() => throw new OperationCanceledException("stop"))))
+        {
+            var ex = await Assert.That(async () => await client.Health.CheckAsync()).Throws<OperationCanceledException>();
+            await Assert.That(ex!.Message).IsEqualTo("stop");
+        }
+    }
+
+    [Test]
+    public async Task Disposing_a_client_disposes_its_channel()
+    {
+        var handler = new TrackingHandler();
+        var client = new OpenShellClient(new OpenShellClientOptions { Address = new Uri("http://localhost:9"), HttpHandler = handler });
+
+        client.Dispose();
+
+        await Assert.That(handler.Disposed).IsTrue();
+    }
+
+    private sealed class TrackingHandler : HttpMessageHandler
+    {
+        public bool Disposed { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("tests never send through this handler");
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
     [Test]
     public async Task Caller_cancellation_surfaces_as_OperationCanceled()
     {
@@ -187,6 +284,32 @@ public class ClientTests
         await client.Health.CheckAsync();
 
         await Assert.That(invoker.Calls.Single().Options.Deadline).IsNotNull();
+    }
+
+    [Test]
+    public async Task Disposed_client_rejects_streams_without_opening_them()
+    {
+        var invoker = new FakeCallInvoker().Stream<Wire.ExecSandboxRequest, Wire.ExecSandboxEvent>("ExecSandbox", _ => []);
+        var client = OpenShellClient.ForTesting(
+            new OpenShellClientOptions { Address = new Uri("http://localhost"), RouteToOwnerReplica = false }, invoker);
+        client.Dispose();
+
+        await Assert.That(async () => await client.Exec.RunAsync("sb", ["true"])).Throws<ObjectDisposedException>();
+        await Assert.That(invoker.CountOf("ExecSandbox")).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Default_timeout_does_not_limit_streams()
+    {
+        var invoker = new FakeCallInvoker().Stream<Wire.ExecSandboxRequest, Wire.ExecSandboxEvent>(
+            "ExecSandbox", _ => [new Wire.ExecSandboxEvent { Exit = new Wire.ExecSandboxExit { ExitCode = 0 } }]);
+        using var client = OpenShellClient.ForTesting(
+            new OpenShellClientOptions { Address = new Uri("http://localhost"), DefaultTimeout = TimeSpan.FromSeconds(5), RouteToOwnerReplica = false },
+            invoker);
+
+        await client.Exec.RunAsync("sb", ["true"]);
+
+        await Assert.That(invoker.Calls.Single(c => c.Method == "ExecSandbox").Options.Deadline).IsNull();
     }
 
     [Test]
