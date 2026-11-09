@@ -123,6 +123,25 @@ public class SandboxClientTests
     }
 
     [Test]
+    public async Task Create_without_options_sends_defaults()
+    {
+        Wire.CreateSandboxRequest? seen = null;
+        var invoker = new FakeCallInvoker().Unary<Wire.CreateSandboxRequest, Wire.SandboxResponse>("CreateSandbox", r =>
+        {
+            seen = r;
+            return Reply("sb");
+        });
+        using var client = ClientTests.NewClient(invoker);
+
+        await client.Sandboxes.CreateAsync("sb", new SandboxSpec { Image = "py:3" });
+
+        await Assert.That(seen!.WorkloadTemplate).IsEqualTo("");
+        await Assert.That(seen.AwaitMainProcessAttachment).IsFalse();
+        await Assert.That(seen.RequestId).IsEqualTo("");
+        await Assert.That(seen.Labels.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task Create_validates_arguments()
     {
         using var client = ClientTests.NewClient(new FakeCallInvoker());
@@ -184,6 +203,7 @@ public class SandboxClientTests
 
         await Assert.That(seen!.WorkspaceScope.SelectionCase).IsEqualTo(Openshell.Datamodel.V1.WorkspaceSelector.SelectionOneofCase.AllWorkspaces);
         await Assert.That(seen.PageToken).IsEqualTo("resume");
+        await Assert.That(seen.LabelSelector).IsEqualTo("");
     }
 
     [Test]
@@ -216,13 +236,27 @@ public class SandboxClientTests
     [Test]
     public async Task Stop_and_start_return_updated_sandbox()
     {
+        Wire.StopSandboxRequest? stop = null;
+        Wire.StartSandboxRequest? start = null;
         var invoker = new FakeCallInvoker()
-            .Unary<Wire.StopSandboxRequest, Wire.SandboxResponse>("StopSandbox", r => Reply(r.Name, Wire.SandboxPhase.Stopping))
-            .Unary<Wire.StartSandboxRequest, Wire.SandboxResponse>("StartSandbox", r => Reply(r.Name, Wire.SandboxPhase.Starting));
-        using var client = ClientTests.NewClient(invoker);
+            .Unary<Wire.StopSandboxRequest, Wire.SandboxResponse>("StopSandbox", r =>
+            {
+                stop = r;
+                return Reply(r.Name, Wire.SandboxPhase.Stopping);
+            })
+            .Unary<Wire.StartSandboxRequest, Wire.SandboxResponse>("StartSandbox", r =>
+            {
+                start = r;
+                return Reply(r.Name, Wire.SandboxPhase.Starting);
+            });
+        using var client = ClientTests.NewClient(invoker, "ws1");
 
         await Assert.That((await client.Sandboxes.StopAsync("a")).Phase).IsEqualTo(SandboxPhase.Stopping);
         await Assert.That((await client.Sandboxes.StartAsync("a")).Phase).IsEqualTo(SandboxPhase.Starting);
+        await Assert.That(stop!.Name).IsEqualTo("a");
+        await Assert.That(stop.WorkspaceScope.Workspace).IsEqualTo("ws1");
+        await Assert.That(start!.Name).IsEqualTo("a");
+        await Assert.That(start.WorkspaceScope.Workspace).IsEqualTo("ws1");
     }
 
     [Test]
@@ -252,11 +286,17 @@ public class SandboxClientTests
     [Test]
     public async Task Delete_without_id_has_null_resource_id()
     {
-        var invoker = new FakeCallInvoker().Unary<Wire.DeleteSandboxRequest, Wire.DeleteSandboxResponse>(
-            "DeleteSandbox", _ => new Wire.DeleteSandboxResponse { Outcome = Wire.DeletionOutcome.Completed });
+        Wire.DeleteSandboxRequest? seen = null;
+        var invoker = new FakeCallInvoker().Unary<Wire.DeleteSandboxRequest, Wire.DeleteSandboxResponse>("DeleteSandbox", r =>
+        {
+            seen = r;
+            return new Wire.DeleteSandboxResponse { Outcome = Wire.DeletionOutcome.Completed };
+        });
         using var client = ClientTests.NewClient(invoker);
 
         await Assert.That((await client.Sandboxes.DeleteAsync("a")).ResourceId).IsNull();
+        await Assert.That(seen!.AllowMissing).IsFalse();
+        await Assert.That(seen.RequestId).IsEqualTo("");
     }
 
     [Test]
@@ -401,6 +441,35 @@ public class SandboxClientTests
 
         var ex = await Assert.That(async () => await task).Throws<OpenShellException>();
         await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.DeadlineExceeded);
+    }
+
+    /// <summary>A GetSandbox that is still in flight when the wait's deadline passes, then reports the cancellation.</summary>
+    private static FakeCallInvoker GetOutlivesDeadline(FakeTimeProvider time) =>
+        new FakeCallInvoker().Unary<Wire.GetSandboxRequest, Wire.SandboxResponse>("GetSandbox", (_, _) =>
+        {
+            time.Advance(TimeSpan.FromSeconds(10));
+            throw new RpcException(new Status(StatusCode.Cancelled, "deadline"));
+        });
+
+    [Test]
+    public async Task A_get_cut_by_the_deadline_is_reported_as_the_wait_timing_out()
+    {
+        var time = new FakeTimeProvider();
+        var options = new WaitOptions { Timeout = TimeSpan.FromSeconds(5) };
+
+        using (var client = ClientTests.NewClient(GetOutlivesDeadline(time), time: time))
+        {
+            var ex = await Assert.That(async () => await client.Sandboxes.WaitReadyAsync("a", options)).Throws<OpenShellException>();
+            await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.DeadlineExceeded);
+            await Assert.That(ex.Message).IsEqualTo("timed out waiting for sandbox 'a'");
+        }
+
+        using (var client = ClientTests.NewClient(GetOutlivesDeadline(time), time: time))
+        {
+            var ex = await Assert.That(async () => await client.Sandboxes.WaitDeletedAsync("a", options)).Throws<OpenShellException>();
+            await Assert.That(ex!.Kind).IsEqualTo(OpenShellErrorKind.DeadlineExceeded);
+            await Assert.That(ex.Message).IsEqualTo("timed out waiting for sandbox 'a' to delete");
+        }
     }
 
     [Test]

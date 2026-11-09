@@ -259,30 +259,40 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
 
     public async ValueTask WaitDeletedAsync(string name, WaitOptions? options = null, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         options ??= new WaitOptions();
         using var deadline = new Deadline(core.Time, options.Timeout, cancellationToken);
         var delay = options.PollInterval;
-        while (true)
+        var timeoutMessage = $"timed out waiting for sandbox '{name}' to delete";
+        while (await FindBeforeDeadlineAsync(name, deadline, timeoutMessage).ConfigureAwait(false) is { } sandbox
+            && (options.ExpectedSandboxId is not { } expected || sandbox.Id == expected))
         {
-            try
-            {
-                var sandbox = await GetAsync(name, deadline.Token).ConfigureAwait(false);
-                if (options.ExpectedSandboxId is { } expected && sandbox.Id != expected)
-                {
-                    return;
-                }
-            }
-            catch (OpenShellException e) when (e.IsNotFound)
-            {
-                return;
-            }
-            catch (OperationCanceledException) when (deadline.TimedOut)
-            {
-                throw Deadline.Expired($"timed out waiting for sandbox '{name}' to delete");
-            }
+            delay = await deadline.SleepAsync(delay, options.MaxPollInterval, timeoutMessage).ConfigureAwait(false);
+        }
+    }
 
-            delay = await deadline.SleepAsync(delay, options.MaxPollInterval, $"timed out waiting for sandbox '{name}' to delete").ConfigureAwait(false);
+    /// <summary>Gets the sandbox, or null when the name is gone; a get cut by the deadline fails with <paramref name="timeoutMessage"/>.</summary>
+    private async ValueTask<Sandbox?> FindBeforeDeadlineAsync(string name, Deadline deadline, string timeoutMessage)
+    {
+        try
+        {
+            return await GetBeforeDeadlineAsync(name, deadline, timeoutMessage).ConfigureAwait(false);
+        }
+        catch (OpenShellException e) when (e.IsNotFound)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Gets the sandbox; a get cut by the deadline fails with <paramref name="timeoutMessage"/>.</summary>
+    private async ValueTask<Sandbox> GetBeforeDeadlineAsync(string name, Deadline deadline, string timeoutMessage)
+    {
+        try
+        {
+            return await GetAsync(name, deadline.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (deadline.TimedOut)
+        {
+            throw Deadline.Expired(timeoutMessage);
         }
     }
 
@@ -312,22 +322,13 @@ internal sealed class SandboxClient(ClientCore core, string workspace) : ISandbo
 
     private async ValueTask<Sandbox> PollAsync(string name, WaitOptions? options, Func<Sandbox, string, string?> step, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         options ??= new WaitOptions();
         using var deadline = new Deadline(core.Time, options.Timeout, cancellationToken);
         var delay = options.PollInterval;
         var timeoutMessage = $"timed out waiting for sandbox '{name}'";
         while (true)
         {
-            Sandbox sandbox;
-            try
-            {
-                sandbox = await GetAsync(name, deadline.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (deadline.TimedOut)
-            {
-                throw Deadline.Expired(timeoutMessage);
-            }
+            var sandbox = await GetBeforeDeadlineAsync(name, deadline, timeoutMessage).ConfigureAwait(false);
 
             // See SandboxWaits: null is done, empty keeps polling, anything else is a terminal failure.
             var outcome = step(sandbox, name);
