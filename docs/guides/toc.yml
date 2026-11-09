@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+- name: Connecting
+  items:
+    - name: Authentication
+      href: authentication.md
+    - name: Gateway discovery
+      href: gateway-discovery.md
+    - name: Dependency injection
+      href: dependency-injection.md
+    - name: Multi-replica gateways
+      href: multi-replica.md
+- name: Working with sandboxes
+  items:
+    - name: Sandboxes
+      href: sandboxes.md
+    - name: Exec and streaming
+      href: exec-and-streaming.md
+    - name: Networking
+      href: networking.md
+    - name: Files and rootfs
+      href: files-and-rootfs.md
+    - name: Providers and profiles
+      href: providers.md
+    - name: Policy and configuration
+      href: policy.md
+- name: Client behavior
+  items:
+    - name: Workspaces and pagination
+      href: workspaces-and-pagination.md
+    - name: Retries and timeouts
+      href: retries.md
+    - name: Errors
+      href: errors.md
+    - name: Observability
+      href: observability.md
+- name: More
+  items:
+    - name: Testing with the fake gateway
+      href: testing.md
+    - name: Raw gRPC access
+      href: raw-grpc.md
+    - name: Versioning
+      href: versioning.md

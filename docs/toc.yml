@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+- name: Getting started
+  href: getting-started/
+  topicHref: getting-started/installation.md
+- name: Guides
+  href: guides/
+  topicHref: guides/authentication.md
+- name: API reference
+  href: api/
+  topicHref: api/index.md

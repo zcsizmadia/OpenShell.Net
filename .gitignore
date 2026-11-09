@@ -18,3 +18,8 @@ tests/package-smoke/.aot/
 
 # Stryker.NET mutation testing output.
 StrykerOutput/
+
+# Documentation site (scripts/docs.sh): the generated API metadata; the site itself goes to artifacts/docs/.
+docs/api/*
+!docs/api/index.md
+docs/_site/

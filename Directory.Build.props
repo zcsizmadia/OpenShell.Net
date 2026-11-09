@@ -9,8 +9,8 @@
       OpenShellSdkTargetFrameworks: the builds shipped in the packages. Add a newer framework only when the code needs
       its APIs; apps on newer runtimes use the newest build listed here.
       OpenShellTestTargetFrameworks: the runtimes the tests run on, including newer ones without a dedicated build.
-      Also update: the dotnet-version list in .github/workflows/ci.yml, release.yml and upstream-sync.yml, and the SDK
-      pin in global.json.
+      Also update: the dotnet-version list in .github/workflows/ci.yml, release.yml, upstream-sync.yml and docs.yml, the
+      TargetFramework of the API reference in docs/docfx.json, and the SDK pin in global.json.
     -->
     <OpenShellSdkTargetFrameworks>net8.0;net10.0</OpenShellSdkTargetFrameworks>
     <OpenShellTestTargetFrameworks>$(OpenShellSdkTargetFrameworks);net11.0</OpenShellTestTargetFrameworks>

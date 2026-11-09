@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+# Documentation snippets read like application code, not library code.
+[*.cs]
+# Applications do not need ConfigureAwait(false).
+dotnet_diagnostic.CA2007.severity = none
+# Snippets are not public API.
+dotnet_diagnostic.CS1591.severity = none

@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
+# SPDX-License-Identifier: Apache-2.0
+
+- name: Installation
+  href: installation.md
+- name: Connect to a gateway
+  href: connecting.md
+- name: Your first program
+  href: first-program.md
