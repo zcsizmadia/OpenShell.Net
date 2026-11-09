@@ -138,7 +138,20 @@ public sealed class ForwardStream : Stream
             throw new InvalidOperationException("the write side of the stream is completed");
         }
 
-        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Linked to the stream's own source so disposing the stream ends a write blocked on flow control.
+        using var linked = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cts.Token)
+            : null;
+        var token = linked?.Token ?? _cts.Token;
+        try
+        {
+            await _writeLock.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _closed) != 0)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+
         try
         {
             while (!buffer.IsEmpty)
@@ -150,11 +163,15 @@ public sealed class ForwardStream : Stream
                 var frame = new Wire.TcpForwardFrame { Data = UnsafeByteOperations.UnsafeWrap(chunk) };
                 try
                 {
-                    await _call.RequestStream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
+                    await _call.RequestStream.WriteAsync(frame, token).ConfigureAwait(false);
                 }
                 catch (RpcException e)
                 {
                     throw ClientCore.Map(e, cancellationToken);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _closed) != 0)
+                {
+                    throw new ObjectDisposedException(GetType().FullName);
                 }
             }
         }
@@ -175,15 +192,27 @@ public sealed class ForwardStream : Stream
         await _writeLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            // Disposal cancels the call instead of waiting for a blocked write, so there is nothing left to complete.
+            if (Volatile.Read(ref _closed) == 0)
+            {
+                await CompleteRequestStreamAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async Task CompleteRequestStreamAsync()
+    {
+        try
+        {
             await _call.RequestStream.CompleteAsync().ConfigureAwait(false);
         }
         catch (RpcException)
         {
             // The stream is already torn down; nothing is left to complete.
-        }
-        finally
-        {
-            _writeLock.Release();
         }
     }
 
@@ -225,7 +254,22 @@ public sealed class ForwardStream : Stream
 
         try
         {
-            await CompleteWriteAsync().ConfigureAwait(false);
+            // Half-close cleanly when no write is in flight. A write holding the lock may be blocked on flow control
+            // indefinitely, so never wait for it: cancelling below ends it instead.
+            if (_writeLock.Wait(0))
+            {
+                try
+                {
+                    if (Interlocked.Exchange(ref _writeCompleted, 1) == 0)
+                    {
+                        await CompleteRequestStreamAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _writeLock.Release();
+                }
+            }
         }
         finally
         {

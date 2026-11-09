@@ -263,6 +263,46 @@ public class RetryPolicyTests
     }
 
     [Test]
+    public async Task Headers_settle_when_the_caller_cancels_during_backoff()
+    {
+        var time = new TimerSignalingTimeProvider();
+        var invoker = new FakeCallInvoker().Throws<Wire.HealthRequest, Wire.HealthResponse>("Health", StatusCode.Unavailable, "x");
+        using var client = NewClient(invoker, time, Fast);
+        using var cts = new CancellationTokenSource();
+
+        using var call = client.Raw.HealthAsync(new Wire.HealthRequest(), cancellationToken: cts.Token);
+        await time.WaitForTimerAsync(Fast.InitialBackoff); // In the first backoff.
+        await cts.CancelAsync();
+
+        await Assert.That(async () => await call.ResponseAsync.WithinBudget()).Throws<OperationCanceledException>();
+        await Assert.That(async () => await call.ResponseHeadersAsync.WithinBudget()).Throws<OperationCanceledException>();
+    }
+
+    [Test]
+    public async Task Headers_settle_when_a_later_attempt_throws_synchronously()
+    {
+        var time = new FakeTimeProvider();
+        var attempts = 0;
+        var invoker = new FakeCallInvoker().Unary<Wire.HealthRequest, Wire.HealthResponse>("Health", _ =>
+        {
+            if (++attempts == 1)
+            {
+                throw new RpcException(new Status(StatusCode.Unavailable, "x"));
+            }
+
+            throw new InvalidOperationException("the invoker failed before starting the call");
+        });
+        using var client = NewClient(invoker, time, Fast);
+
+        using var call = client.Raw.HealthAsync(new Wire.HealthRequest());
+        await Drive(time, call.ResponseAsync);
+
+        await Assert.That(async () => await call.ResponseAsync).Throws<InvalidOperationException>();
+        await Assert.That(async () => await call.ResponseHeadersAsync.WithinBudget()).Throws<InvalidOperationException>();
+        await Assert.That(attempts).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task Non_unary_calls_pass_through_untouched()
     {
         var invoker = new FakeCallInvoker()

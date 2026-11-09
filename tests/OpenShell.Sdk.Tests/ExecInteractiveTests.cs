@@ -298,6 +298,39 @@ public class ExecInteractiveTests
     }
 
     [Test]
+    public async Task Dispose_returns_while_stdin_is_blocked_on_flow_control()
+    {
+        var invoker = Interactive.With(Interactive.Hang);
+        using var client = ClientTests.NewClient(invoker);
+        var session = await client.Exec.InteractiveAsync("sb", ["cat"], 1, 1);
+        var channel = Interactive.Channel(invoker);
+        channel.WriteGate = new TaskCompletionSource().Task; // The remote never grants more window.
+
+        var write = session.WriteStdinAsync(new byte[] { 1, 2, 3 }).AsTask();
+        await channel.WriteBlocked.Task.WithinBudget();
+
+        await session.DisposeAsync().AsTask().WithinBudget();
+
+        await Assert.That(async () => await write.WithinBudget()).Throws<ObjectDisposedException>();
+        await Assert.That(channel.ClientDisposed).IsTrue();
+        await Assert.That(channel.CompleteCount).IsEqualTo(0); // Cancelled, not half-closed behind the blocked send.
+        await Assert.That(async () => await session.ExitCode).Throws<OpenShellException>();
+    }
+
+    [Test]
+    public async Task Dispose_closes_stdin_when_no_send_is_in_flight()
+    {
+        var invoker = Interactive.With(Interactive.Hang);
+        using var client = ClientTests.NewClient(invoker);
+        var session = await client.Exec.InteractiveAsync("sb", ["cat"], 1, 1);
+        await session.WriteStdinAsync(new byte[] { 1 });
+
+        await session.DisposeAsync();
+
+        await Assert.That(Interactive.Channel(invoker).CompleteCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Write_failures_are_mapped()
     {
         var invoker = Interactive.With(Interactive.Shell);

@@ -213,14 +213,14 @@ public class TransportTests
     public async Task Custom_ca_validation_rejects_name_mismatch_and_missing_cert()
     {
         var roots = new X509Certificate2Collection();
-        await Assert.That(ChannelFactory.ValidateAgainst(roots, null, SslPolicyErrors.None)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(roots, null, null, SslPolicyErrors.None)).IsFalse();
 
         using var key = ECDsa.Create();
         var req = new CertificateRequest("CN=leaf", key, HashAlgorithmName.SHA256);
         using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
 
-        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, SslPolicyErrors.RemoteCertificateNameMismatch)).IsFalse();
-        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, SslPolicyErrors.None)).IsTrue();
+        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, null, SslPolicyErrors.RemoteCertificateNameMismatch)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(roots, cert, null, SslPolicyErrors.None)).IsTrue();
     }
 
     [Test]
@@ -236,12 +236,12 @@ public class TransportTests
         using var other = otherReq.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
 
         var pinned = new X509Certificate2Collection(root);
-        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateChainErrors)).IsTrue();
-        await Assert.That(ChannelFactory.ValidateAgainst(pinned, other, SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, null, SslPolicyErrors.RemoteCertificateChainErrors)).IsTrue();
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, other, null, SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
 
         // A missing certificate or a name mismatch is never rescued by the pinned roots, alone or with chain errors.
-        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateNotAvailable)).IsFalse();
-        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, null, SslPolicyErrors.RemoteCertificateNotAvailable)).IsFalse();
+        await Assert.That(ChannelFactory.ValidateAgainst(pinned, root, null, SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateChainErrors)).IsFalse();
     }
 
     private sealed class CapturingHandler : HttpMessageHandler

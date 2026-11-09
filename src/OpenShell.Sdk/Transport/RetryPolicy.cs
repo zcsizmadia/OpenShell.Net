@@ -105,27 +105,38 @@ internal sealed partial class RetryCallInvoker(
         where TRequest : class
         where TResponse : class
     {
-        for (var attempt = 1; ; attempt++)
+        // Every way out settles the headers, so ResponseHeadersAsync cannot hang: including a backoff cancelled by the
+        // caller and an inner invoker that throws synchronously on a later attempt.
+        try
         {
-            state.Current?.Dispose();
-            var call = inner.AsyncUnaryCall(method, host, options, request);
-            state.Current = call;
-            try
+            for (var attempt = 1; ; attempt++)
             {
-                var response = await call.ResponseAsync.ConfigureAwait(false);
-                state.Headers.TrySetResult(await call.ResponseHeadersAsync.ConfigureAwait(false));
-                return response;
+                state.Current?.Dispose();
+                // Owned by the state: the AsyncUnaryCall handed to the caller disposes the current attempt.
+                state.Current = inner.AsyncUnaryCall(method, host, options, request);
+                var call = state.Current;
+                try
+                {
+                    var response = await call.ResponseAsync.ConfigureAwait(false);
+                    state.Headers.TrySetResult(await call.ResponseHeadersAsync.ConfigureAwait(false));
+                    return response;
+                }
+                catch (RpcException e) when (CanRetry(e, attempt, options, out var delay))
+                {
+                    LogRetry(_logger, method.Name, attempt + 1, policy.MaxAttempts, delay.TotalMilliseconds, e.StatusCode);
+                    await Task.Delay(delay, time, options.CancellationToken).ConfigureAwait(false);
+                }
             }
-            catch (RpcException e) when (CanRetry(e, attempt, options, out var delay))
-            {
-                LogRetry(_logger, method.Name, attempt + 1, policy.MaxAttempts, delay.TotalMilliseconds, e.StatusCode);
-                await Task.Delay(delay, time, options.CancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception e)
-            {
-                state.Headers.TrySetException(e);
-                throw;
-            }
+        }
+        catch (OperationCanceledException e)
+        {
+            state.Headers.TrySetCanceled(e.CancellationToken);
+            throw;
+        }
+        catch (Exception e)
+        {
+            state.Headers.TrySetException(e);
+            throw;
         }
     }
 

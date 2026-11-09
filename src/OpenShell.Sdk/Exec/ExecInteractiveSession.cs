@@ -92,15 +92,27 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
         await _sendLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            // Disposal cancels the call instead of waiting for a blocked send, so there is nothing left to complete.
+            if (Volatile.Read(ref _disposed) == 0)
+            {
+                await CompleteRequestStreamAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
+    }
+
+    private async Task CompleteRequestStreamAsync()
+    {
+        try
+        {
             await _call.RequestStream.CompleteAsync().ConfigureAwait(false);
         }
         catch (RpcException)
         {
             // The stream is already torn down.
-        }
-        finally
-        {
-            _sendLock.Release();
         }
     }
 
@@ -213,7 +225,22 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
 
         try
         {
-            await CompleteStdinAsync().ConfigureAwait(false);
+            // Close stdin cleanly when no send is in flight. A send holding the lock may be blocked on flow control
+            // indefinitely, so never wait for it: cancelling below ends it instead.
+            if (_sendLock.Wait(0))
+            {
+                try
+                {
+                    if (Interlocked.Exchange(ref _inputCompleted, 1) == 0)
+                    {
+                        await CompleteRequestStreamAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    _sendLock.Release();
+                }
+            }
         }
         finally
         {
@@ -246,14 +273,29 @@ public sealed class ExecInteractiveSession : IAsyncDisposable
             throw new InvalidOperationException("standard input is already closed");
         }
 
-        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Linked to the session's own source so disposing the session ends a send blocked on flow control.
+        using var linked = LinkToSession(cancellationToken);
+        var token = linked.Token;
         try
         {
-            await _call.RequestStream.WriteAsync(message, cancellationToken).ConfigureAwait(false);
+            await _sendLock.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _disposed) != 0)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
+        }
+
+        try
+        {
+            await _call.RequestStream.WriteAsync(message, token).ConfigureAwait(false);
         }
         catch (RpcException e)
         {
             throw ClientCore.Map(e, cancellationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && Volatile.Read(ref _disposed) != 0)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
         }
         finally
         {

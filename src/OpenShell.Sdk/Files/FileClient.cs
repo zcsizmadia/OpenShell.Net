@@ -353,9 +353,9 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
                     return code ?? -1;
                 },
                 CancellationToken.None);
+            var stdin = new SessionStdinStream(session);
             try
             {
-                var stdin = new SessionStdinStream(session);
                 await using (stdin.ConfigureAwait(false))
                 {
                     await writeTar(stdin, cancellationToken).ConfigureAwait(false);
@@ -363,8 +363,15 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
 
                 await session.CompleteStdinAsync().ConfigureAwait(false);
             }
-            catch
+            catch (Exception failure)
             {
+                // Sending stdin fails when the remote command already exited, for example because tar could not
+                // create the directory. Its exit code and stderr say why, so report those once the pump has them.
+                if (stdin.WriteFailed && await RemoteExitAsync(pump).ConfigureAwait(false) is { } code and not 0)
+                {
+                    throw RemoteTarFailed(code, stderr, failure);
+                }
+
                 await session.CancelAsync().ConfigureAwait(false);
                 try
                 {
@@ -381,12 +388,35 @@ internal sealed class FileClient(IExecClient exec) : IFileClient
             var exitCode = await pump.ConfigureAwait(false);
             if (exitCode != 0)
             {
-                throw new OpenShellException(
-                    OpenShellErrorKind.Internal,
-                    string.Create(CultureInfo.InvariantCulture, $"remote tar exited with code {exitCode}: {stderr.ToString().Trim()}"));
+                throw RemoteTarFailed(exitCode, stderr, null);
             }
         }
     }
+
+    /// <summary>
+    /// How long a failed stdin write waits for the remote exit before the session is cancelled. A write fails once
+    /// the call has ended, so the exit normally follows at once; the bound only guards against a call that has not.
+    /// </summary>
+    internal TimeSpan RemoteExitGrace { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>The remote exit code, or null when the pump failed or did not finish within <see cref="RemoteExitGrace"/>.</summary>
+    private async Task<int?> RemoteExitAsync(Task<int> pump)
+    {
+        try
+        {
+            return await pump.WaitAsync(RemoteExitGrace).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is TimeoutException or OpenShellException or OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private static OpenShellException RemoteTarFailed(int exitCode, StringBuilder stderr, Exception? cause) =>
+        new(
+            OpenShellErrorKind.Internal,
+            string.Create(CultureInfo.InvariantCulture, $"remote tar exited with code {exitCode}: {stderr.ToString().Trim()}"),
+            cause);
 }
 
 internal static class RemotePath
@@ -443,11 +473,24 @@ internal sealed class SessionStdinStream(ExecInteractiveSession session) : Strea
         set => throw new NotSupportedException();
     }
 
-    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
-        session.WriteStdinAsync(buffer, cancellationToken);
+    /// <summary>True once sending to the session failed (not counting cancellation): the remote end may have exited.</summary>
+    public bool WriteFailed { get; private set; }
+
+    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await session.WriteStdinAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            WriteFailed = true;
+            throw;
+        }
+    }
 
     public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        session.WriteStdinAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+        WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
 
     public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

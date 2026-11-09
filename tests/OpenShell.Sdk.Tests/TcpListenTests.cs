@@ -212,4 +212,95 @@ public class TcpListenTests
         await Assert.That(async () => await client.Tcp.ListenAsync("sb", 80, localPort: -1)).Throws<ArgumentOutOfRangeException>();
         await Assert.That(async () => await client.Tcp.ListenAsync("sb", 80, localPort: 65536)).Throws<ArgumentOutOfRangeException>();
     }
+
+    [Test]
+    public async Task A_write_after_the_remote_completed_the_call_ends_the_bridge_cleanly()
+    {
+        var tunnel = new CompletedCallStream();
+        var tcp = new TcpListener(IPAddress.Loopback, 0);
+        tcp.Start();
+        var listener = new ForwardListener(tcp, _ => ValueTask.FromResult<Stream>(tunnel));
+        try
+        {
+            using var conn = await ConnectAsync(listener);
+            await conn.GetStream().WriteAsync(Encoding.UTF8.GetBytes("late"));
+
+            // The bridge is now tearing down after the write failed; hold it there to capture it before it ends.
+            await tunnel.Disposing.Task.WithinBudget();
+            await Waits.UntilAsync(() => listener.ActiveBridges.Length == 1); // Registered once BridgeAsync first yields.
+            var bridge = listener.ActiveBridges.Single();
+            tunnel.Release.TrySetResult();
+
+            await Assert.That(async () => await bridge.WithinBudget()).ThrowsNothing();
+        }
+        finally
+        {
+            tunnel.Release.TrySetResult();
+            await listener.DisposeAsync();
+        }
+
+        await Assert.That(tunnel.Writes).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// A tunnel whose gateway call already completed: a write fails the way gRPC fails it, with
+    /// <see cref="InvalidOperationException"/>; reads end once the tunnel is disposed.
+    /// </summary>
+    private sealed class CompletedCallStream : Stream
+    {
+        private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _writes;
+
+        public TaskCompletionSource Disposing { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int Writes => Volatile.Read(ref _writes);
+
+        public override bool CanRead => true;
+
+        public override bool CanWrite => true;
+
+        public override bool CanSeek => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await _closed.Task.WaitAsync(cancellationToken);
+            return 0;
+        }
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _writes);
+            return ValueTask.FromException(new InvalidOperationException("Can't write the message because the call is complete."));
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            Disposing.TrySetResult();
+            await Release.Task;
+            _closed.TrySetResult();
+            await base.DisposeAsync();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
 }
