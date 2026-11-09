@@ -86,16 +86,17 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Authorization code with PKCE, loopback callback, browser launch | G | ⚠️ tested against a stub identity provider |
 | Device-code flow | G | ⚠️ tested against a stub identity provider |
 | Keyboard (paste) flow | G | ✅ |
-| Token cache, in-memory or on disk | G | ✅ |
+| Token cache, in-memory or on disk, in the CLI's `oidc_token.json` format (`expires_at`, `issuer`, `client_id`); a cached token is reused only for the same issuer and client | G R | ✅ checked against the shared `oidc-token-bundle.json` fixture |
 
 ## Gateway configuration (`OpenShell.Gateway`)
 
 | Feature | Seen in | Status |
 |---|---|---|
-| Resolve the on-disk gateway config and active gateway | G P | ✅ |
-| List gateways and load metadata | G | ✅ |
+| Resolve the on-disk gateway config and active gateway, falling back to the system `active_gateway` when the user one is missing, empty or invalid | G P | ✅ |
+| User entries shadow system registrations only when they hold `metadata.json`; credentials (`mtls/`, `oidc_token.json`, `edge_token`) always live in the user gateway directory (`GatewayMetadata.StateDirectory`) | G R | ✅ |
+| List gateways and load metadata (sorted by name, unreadable registrations skipped, system default marked active) | G | ✅ |
 | CLI discovery rules from v0.1.7: `OPENSHELL_SYSTEM_GATEWAY_DIR` system root, FQDN and IPv4 gateway names, Windows device names rejected on every platform | G | ✅ |
-| mTLS bundle and token loading | G P | ✅ |
+| mTLS bundle and token loading; renewed OIDC tokens are written back so the CLI stays signed in | G P | ✅ |
 | `GatewayClient.Connect` convenience | P | ✅ |
 
 ## Testing support
@@ -106,22 +107,37 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | In-memory fake client (`OpenShell.Sdk.Testing`; 16 contract scenarios run against both the fake and the real client) | G | ✅ |
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
 | Shared conformance fixtures consumed by tests (`sdk/conformance/*.json`) | G T P | ✅ |
-| Unit tests on an in-memory gRPC invoker, net8.0, net10.0 and net11.0 runtimes | G T P | ✅ |
-| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ⚠️ written, skipped without a gateway, never run against a real one |
+| Unit tests on an in-memory gRPC invoker, on the net8.0, net10.0 and net11.0 runtimes (Linux and Windows CI) | G T P | ✅ |
+| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ⚠️ written, skipped without a gateway, never run against a real one; CI job planned in #32 |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
 
 ## Packaging, docs, and CI
 
 | Feature | Status |
 |---|---|
-| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE | ✅ all three pack locally; not yet published |
+| NuGet packages `OpenShell.Net`, `OpenShell.Net.DependencyInjection`, and `OpenShell.Net.Testing`, with shared metadata, README, and NOTICE; `net8.0` and `net10.0` builds (apps on .NET 11 use `net10.0`) | ✅ packed in CI; not yet published. Consumer, AOT and API compatibility checks planned in #33 |
 | `OpenShell.Sdk.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
-| README | ✅ |
-| `scripts/ci.sh`, CI workflow (Linux and Windows), nuget.org release workflow (Trusted Publishing) | ⚠️ written; no workflow has run yet |
-| Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh`, weekly sync pull request, drift check in CI | ⚠️ the script runs locally; the workflows have not run yet |
+| README | ✅; a full documentation site is planned in #25 |
+| `scripts/ci.sh`, CI workflow (Linux and Windows) | ✅ runs on every pull request and on `main` |
+| nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ⚠️ written; first runs on the first release tag |
+| Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh` (optional files for fixtures newer than the release), drift check in CI | ✅ the drift check runs in CI and fails on script errors |
+| Weekly upstream sync pull request (`upstream-sync.yml`) | ⚠️ written; needs "Allow GitHub Actions to create and approve pull requests" and has not run yet |
 | Editorconfig with analyzer severities and SPDX header enforcement | ✅ |
+
+## Upstream changes after v0.1.7
+
+Reviewed on 2026-11-08 against NVIDIA/OpenShell `main` (51 commits after v0.1.7):
+
+- CLI-compatible `oidc_token.json` (upstream PR 4830) and the system `active_gateway` fallback (upstream PR 4917):
+  implemented here (#10, #11). The shared `oidc-token-bundle.json` fixture is vendored ahead of the next release.
+- Go SDK: Listen tunnels are set up in parallel (upstream PR 4995). The .NET forwarder already opens each
+  accepted connection independently.
+- Go SDK: `RefreshableToken` no longer serves an expired cached token after a failed refresh. The .NET
+  `RefreshableToken` already surfaces the refresh error.
+- Proto changes (`ServiceRouteLease`, `SupervisorServiceAdvertisement`, `supports_service_advertisements`) are
+  supervisor-session messages; no SDK-facing change.
 
 ## Known differences from the other SDKs
 
