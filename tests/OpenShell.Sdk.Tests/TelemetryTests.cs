@@ -98,6 +98,8 @@ public class TelemetryTests
 
         var duration = capture.Durations("Health").Single();
         await Assert.That(duration.Value).IsGreaterThanOrEqualTo(0);
+        await Assert.That(duration.Tags["rpc.system"]).IsEqualTo("grpc");
+        await Assert.That(duration.Tags["rpc.method"]).IsEqualTo("Health");
         await Assert.That(duration.Tags["rpc.grpc.status_code"]).IsEqualTo(0);
         await Assert.That(duration.Tags["rpc.service"]).IsEqualTo("openshell.v1.OpenShell");
     }
@@ -207,6 +209,73 @@ public class TelemetryTests
         await Assert.That(statuses).IsEquivalentTo(new[] { "0", ((int)StatusCode.Internal).ToString() });
     }
 
+    private static Method<Wire.HealthRequest, Wire.HealthResponse> TestMethod(string name) =>
+        new(MethodType.Unary, "svc", name, Marshallers.Create(_ => [], _ => new Wire.HealthRequest()), Marshallers.Create(_ => [], _ => new Wire.HealthResponse()));
+
+    [Test]
+    public async Task Spans_are_emitted_without_a_meter_listener()
+    {
+        var spans = new ConcurrentBag<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == OpenShellTelemetry.ActivitySourceName,
+            Sample = static (ref _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = spans.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+        var invoker = new InstrumentedCallInvoker(new BlockingStub(null));
+
+        invoker.BlockingUnaryCall(TestMethod("SpanOnly"), null, new CallOptions(), new Wire.HealthRequest());
+
+        await Assert.That(spans.Count(s => s.OperationName == "svc/SpanOnly")).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Blocking_calls_record_their_duration_with_rpc_tags()
+    {
+        var durations = new ConcurrentBag<Dictionary<string, object?>>();
+        using var meters = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == OpenShellTelemetry.MeterName)
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        meters.SetMeasurementEventCallback<double>((_, _, tags, _) => durations.Add(tags.ToArray().ToDictionary(t => t.Key, t => t.Value)));
+        meters.Start();
+        var invoker = new InstrumentedCallInvoker(new BlockingStub(null));
+
+        invoker.BlockingUnaryCall(TestMethod("MeterOnly"), null, new CallOptions(), new Wire.HealthRequest());
+
+        var tags = durations.Single(t => Equals(t["rpc.method"], "MeterOnly"));
+        await Assert.That(tags["rpc.system"]).IsEqualTo("grpc");
+        await Assert.That(tags["rpc.service"]).IsEqualTo("svc");
+        await Assert.That(tags["rpc.grpc.status_code"]).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Disposing_client_streaming_and_duplex_calls_releases_them_and_records_cancellation()
+    {
+        using var capture = new TelemetryCapture();
+        var stub = new PendingStub();
+        var invoker = new InstrumentedCallInvoker(stub);
+        var upload = new Method<Wire.PushSandboxLogsRequest, Wire.PushSandboxLogsResponse>(
+            MethodType.ClientStreaming, "svc", "Upload", Marshallers.Create(_ => [], _ => new Wire.PushSandboxLogsRequest()), Marshallers.Create(_ => [], _ => new Wire.PushSandboxLogsResponse()));
+        var relay = new Method<Wire.TcpForwardFrame, Wire.TcpForwardFrame>(
+            MethodType.DuplexStreaming, "svc", "Relay", Marshallers.Create(_ => [], _ => new Wire.TcpForwardFrame()), Marshallers.Create(_ => [], _ => new Wire.TcpForwardFrame()));
+
+        invoker.AsyncClientStreamingCall(upload, null, new CallOptions()).Dispose();
+        invoker.AsyncDuplexStreamingCall(relay, null, new CallOptions()).Dispose();
+
+        await Assert.That(stub.Disposed).IsEquivalentTo(new[] { "Upload", "Relay" });
+        var cancelled = ((int)StatusCode.Cancelled).ToString();
+        await Assert.That(capture.Spans.Select(s => Tag(s, "rpc.method") + "=" + Tag(s, "rpc.grpc.status_code")).Order())
+            .IsEquivalentTo(new[] { "Relay=" + cancelled, "Upload=" + cancelled });
+    }
+
     [Test]
     public async Task Synchronous_failure_while_starting_a_call_is_recorded_and_rethrown()
     {
@@ -285,6 +354,27 @@ public class TelemetryTests
     {
         yield return new Wire.ExecSandboxEvent();
         throw new RpcException(new Status(StatusCode.Unavailable, "dropped"));
+    }
+
+    /// <summary>Client-streaming and duplex calls that never answer, recording which ones the caller disposed.</summary>
+    private sealed class PendingStub : CallInvoker
+    {
+        public ConcurrentQueue<string> Disposed { get; } = new();
+
+        public override TResponse BlockingUnaryCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request) =>
+            throw new NotSupportedException();
+
+        public override AsyncUnaryCall<TResponse> AsyncUnaryCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request) =>
+            throw new NotSupportedException();
+
+        public override AsyncServerStreamingCall<TResponse> AsyncServerStreamingCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string? host, CallOptions options, TRequest request) =>
+            throw new NotSupportedException();
+
+        public override AsyncClientStreamingCall<TRequest, TResponse> AsyncClientStreamingCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string? host, CallOptions options) =>
+            new(null!, new TaskCompletionSource<TResponse>().Task, Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => Disposed.Enqueue(method.Name));
+
+        public override AsyncDuplexStreamingCall<TRequest, TResponse> AsyncDuplexStreamingCall<TRequest, TResponse>(Method<TRequest, TResponse> method, string? host, CallOptions options) =>
+            new(null!, null!, Task.FromResult(new Metadata()), () => Status.DefaultSuccess, () => [], () => Disposed.Enqueue(method.Name));
     }
 
     private sealed class BlockingStub(RpcException? failure) : CallInvoker
