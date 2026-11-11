@@ -45,7 +45,7 @@
       intentional breaks go in a reviewed CompatibilitySuppressions.xml.
     -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>0.1.7</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>0.1.8</PackageValidationBaselineVersion>
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)..\README.md" Pack="true" PackagePath="\" Visible="false" />
