@@ -9,7 +9,8 @@ namespace OpenShell.Oidc;
 /// <param name="Tokens">The tokens.</param>
 /// <param name="Issuer">The OIDC issuer; null when the file does not record one.</param>
 /// <param name="ClientId">The OIDC client id; null when the file does not record one.</param>
-internal sealed record StoredOidcToken(OidcTokens Tokens, string? Issuer, string? ClientId)
+/// <param name="ClientCredentials">True when the token came from the client-credentials grant and is renewed by repeating it.</param>
+internal sealed record StoredOidcToken(OidcTokens Tokens, string? Issuer, string? ClientId, bool ClientCredentials = false)
 {
     /// <summary>
     /// True when the bundle was issued for this issuer (ignoring a trailing slash) and client id. A file that records
@@ -24,7 +25,7 @@ internal sealed record StoredOidcToken(OidcTokens Tokens, string? Issuer, string
 /// <summary>
 /// The <c>oidc_token.json</c> cache shared with the OpenShell CLI, in the CLI's format (<c>openshell-bootstrap</c>
 /// <c>OidcTokenBundle</c>): <c>access_token</c>, optional <c>refresh_token</c>, optional <c>expires_at</c> in Unix
-/// seconds, <c>issuer</c> and <c>client_id</c>.
+/// seconds, <c>issuer</c>, <c>client_id</c>, and <c>client_credentials</c> (written only when true).
 /// </summary>
 internal static class OidcTokenFile
 {
@@ -81,7 +82,7 @@ internal static class OidcTokenFile
             string.IsNullOrEmpty(bundle.RefreshToken) ? null : bundle.RefreshToken,
             "Bearer",
             expiry);
-        return new StoredOidcToken(tokens, NullIfEmpty(bundle.Issuer), NullIfEmpty(bundle.ClientId));
+        return new StoredOidcToken(tokens, NullIfEmpty(bundle.Issuer), NullIfEmpty(bundle.ClientId), bundle.ClientCredentials);
     }
 
     /// <summary>
@@ -98,8 +99,11 @@ internal static class OidcTokenFile
         return stored.Tokens is { ExpiresAt: { } exp } && time.GetUtcNow() > exp - ExpiryLeeway ? null : stored.Tokens;
     }
 
-    /// <summary>Writes the tokens atomically with owner-only permissions where the OS supports them.</summary>
-    public static void Write(string directory, OidcTokens tokens, string issuer, string clientId)
+    /// <summary>
+    /// Writes the tokens atomically with owner-only permissions where the OS supports them. Set
+    /// <paramref name="clientCredentials"/> for a token from the client-credentials grant, so the CLI and the SDK can renew it.
+    /// </summary>
+    public static void Write(string directory, OidcTokens tokens, string issuer, string clientId, bool clientCredentials = false)
     {
         var bundle = new OidcTokenBundleDto
         {
@@ -108,6 +112,7 @@ internal static class OidcTokenFile
             ExpiresAt = tokens.ExpiresAt is { } expiry ? (ulong)Math.Max(expiry.ToUnixTimeSeconds(), 0) : null,
             Issuer = issuer,
             ClientId = clientId,
+            ClientCredentials = clientCredentials,
         };
 
         var path = Path.Join(directory, FileName);

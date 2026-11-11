@@ -30,4 +30,4 @@ The public API lives in the `OpenShell` namespace (with `OpenShell.Gateway`, `Op
 
 ## Which gateway version
 
-The package version is the NVIDIA OpenShell release the SDK is built from, so `OpenShell.Net 0.1.7.x` pairs with an OpenShell 0.1.7 gateway. See [Versioning](guides/versioning.md). [Feature parity](guides/parity.md) summarizes which gateway features the SDK covers and how each was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full detail.
+The package version is the NVIDIA OpenShell release the SDK is built from, so `OpenShell.Net 0.1.8.x` pairs with an OpenShell 0.1.8 gateway. See [Versioning](guides/versioning.md). [Feature parity](guides/parity.md) summarizes which gateway features the SDK covers and how each was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full detail.

@@ -255,7 +255,12 @@ public class GatewayClientTests
 
     private sealed class OidcRig : IDisposable
     {
-        public OidcRig(bool autoRefresh = true, bool writeBack = true, bool oidc = true)
+        public OidcRig(
+            bool autoRefresh = true,
+            bool writeBack = true,
+            bool oidc = true,
+            Func<string, string?>? env = null,
+            Func<CancellationToken, ValueTask<string>>? secretProvider = null)
         {
             Time = new FakeTimeProvider(Now);
             Dir = new TempDirectory();
@@ -265,13 +270,15 @@ public class GatewayClientTests
                 return StubHandler.Json($$"""{"access_token":"renewed-{{Rotation}}","expires_in":3600{{(RotateRefresh ? ",\"refresh_token\":\"rotated\"" : "")}}}""");
             });
             Options = GatewayClient.CreateOptions(
-                Config(Dir.Path, GatewayAuthMode.Oidc, oidc: oidc),
+                Config(Dir.Path, GatewayAuthMode.Oidc, oidc: oidc) with { OidcAudience = "openshell-api", OidcScopes = "openshell:all" },
                 new GatewayConnectOptions
                 {
                     OidcHttpClient = new HttpClient(Handler),
                     TimeProvider = Time,
                     AutoRefresh = autoRefresh,
                     WriteBack = writeBack,
+                    OidcClientSecretProvider = secretProvider,
+                    GetEnvironmentVariable = env ?? (_ => null),
                 });
             Auth = Options.Auth;
         }
@@ -290,8 +297,8 @@ public class GatewayClientTests
 
         public bool RotateRefresh { get; set; }
 
-        public void WriteDisk(string access, string? refresh, DateTimeOffset? expiry) =>
-            OidcTokenFile.Write(Dir.Path, new OidcTokens(access, refresh, "Bearer", expiry), Idp, "cli");
+        public void WriteDisk(string access, string? refresh, DateTimeOffset? expiry, bool clientCredentials = false) =>
+            OidcTokenFile.Write(Dir.Path, new OidcTokens(access, refresh, "Bearer", expiry), Idp, "cli", clientCredentials);
 
         public async Task<string> Header()
         {
@@ -390,6 +397,103 @@ public class GatewayClientTests
         var ex = await Assert.That(async () => await rig.Header()).Throws<OidcException>();
 
         await Assert.That(ex!.Message).Contains("run `openshell gateway login gw`");
+        await Assert.That(rig.Handler.Requests.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task A_client_credentials_token_is_renewed_by_repeating_the_grant_with_the_environment_secret()
+    {
+        string? asked = null;
+        using var rig = new OidcRig(env: name =>
+        {
+            asked = name;
+            return "ci-secret";
+        });
+        var path = Path.Join(rig.Dir.Path, "oidc_token.json");
+        await File.WriteAllTextAsync(
+            path,
+            $$"""{"access_token":"ci-token","expires_at":{{Now.AddMinutes(-5).ToUnixTimeSeconds()}},"issuer":"{{Idp}}","client_id":"cli","client_credentials":true}""");
+
+        await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
+
+        await Assert.That(asked).IsEqualTo("OPENSHELL_OIDC_CLIENT_SECRET");
+        var form = rig.Handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
+        await Assert.That(form["grant_type"]).IsEqualTo("client_credentials");
+        await Assert.That(form["client_id"]).IsEqualTo("cli");
+        await Assert.That(form["client_secret"]).IsEqualTo("ci-secret");
+        await Assert.That(form["audience"]).IsEqualTo("openshell-api");
+        await Assert.That(form["scope"]).IsEqualTo("openshell:all");
+
+        // Written back still marked, so the CLI can renew it too; the secret never reaches the file.
+        var json = await File.ReadAllTextAsync(path);
+        await Assert.That(json).Contains("\"client_credentials\":true");
+        await Assert.That(json).DoesNotContain("ci-secret");
+        await Assert.That(OidcTokenFile.Read(rig.Dir.Path)!.ClientCredentials).IsTrue();
+    }
+
+    [Test]
+    public async Task A_client_credentials_token_uses_the_configured_secret_provider_over_the_environment()
+    {
+        using var rig = new OidcRig(env: _ => "env-secret", secretProvider: _ => ValueTask.FromResult("provided-secret"));
+        rig.WriteDisk("ci-token", null, Now.AddMinutes(-5), clientCredentials: true);
+
+        await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
+
+        var form = rig.Handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
+        await Assert.That(form["client_secret"]).IsEqualTo("provided-secret");
+    }
+
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    public async Task A_client_credentials_token_without_a_secret_is_reported_with_guidance(string? secret)
+    {
+        using var rig = new OidcRig(env: _ => secret);
+        rig.WriteDisk("ci-token", null, Now.AddMinutes(-5), clientCredentials: true);
+
+        var ex = await Assert.That(async () => await rig.Header()).Throws<OidcException>();
+
+        await Assert.That(ex!.Failure).IsEqualTo(OidcFailure.Refresh);
+        await Assert.That(ex.Message).Contains("set OPENSHELL_OIDC_CLIENT_SECRET to renew it");
+        await Assert.That(ex.Message).Contains("run `openshell gateway login gw`");
+        await Assert.That(rig.Handler.Requests.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task A_client_credentials_token_with_a_refresh_token_is_refreshed_and_stays_marked()
+    {
+        using var rig = new OidcRig(env: _ => "unused");
+        rig.WriteDisk("ci-token", "refresh-1", Now.AddMinutes(-5), clientCredentials: true);
+
+        await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
+
+        var form = rig.Handler.Requests.Single(r => r.Method == HttpMethod.Post).Form;
+        await Assert.That(form["grant_type"]).IsEqualTo("refresh_token");
+        var stored = OidcTokenFile.Read(rig.Dir.Path)!;
+        await Assert.That(stored.ClientCredentials).IsTrue();
+        await Assert.That(stored.Tokens.RefreshToken).IsEqualTo("refresh-1");
+    }
+
+    [Test]
+    public async Task A_rejected_client_credentials_token_is_renewed()
+    {
+        using var rig = new OidcRig(env: _ => "ci-secret");
+        rig.WriteDisk("valid-but-rejected", null, null, clientCredentials: true);
+        await Assert.That(await rig.Header()).IsEqualTo("valid-but-rejected");
+
+        await Assert.That(await rig.Auth.TryRecoverAsync(CancellationToken.None)).IsTrue();
+
+        await Assert.That(await rig.Header()).IsEqualTo("renewed-1");
+    }
+
+    [Test]
+    public async Task Auto_refresh_can_be_disabled_for_client_credentials_tokens()
+    {
+        using var rig = new OidcRig(autoRefresh: false, env: _ => "ci-secret");
+        rig.WriteDisk("ci-token", null, Now.AddMinutes(-5), clientCredentials: true);
+
+        await Assert.That(async () => await rig.Header()).Throws<OidcException>();
+
         await Assert.That(rig.Handler.Requests.Count).IsEqualTo(0);
     }
 
