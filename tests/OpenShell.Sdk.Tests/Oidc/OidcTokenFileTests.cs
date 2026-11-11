@@ -44,6 +44,23 @@ public class OidcTokenFileTests
     }
 
     [Test]
+    public async Task The_client_credentials_marker_is_optional_and_round_trips_as_the_cli_writes_it()
+    {
+        using var dir = new TempDirectory();
+        var path = Path.Join(dir.Path, "oidc_token.json");
+
+        // Bundles from before the marker, and the shared fixture, read as unmarked.
+        File.Copy(ConformanceFixture.PathOf("oidc-token-bundle.json"), path);
+        await Assert.That(OidcTokenFile.Read(dir.Path)!.ClientCredentials).IsFalse();
+
+        OidcTokenFile.Write(dir.Path, new OidcTokens("acc"), Issuer, Client, clientCredentials: true);
+
+        var json = await File.ReadAllTextAsync(path);
+        await Assert.That(json).IsEqualTo("""{"access_token":"acc","issuer":"https://issuer.example.com","client_id":"openshell-cli","client_credentials":true}""");
+        await Assert.That(OidcTokenFile.Read(dir.Path)!.ClientCredentials).IsTrue();
+    }
+
+    [Test]
     public async Task Tokens_without_expiry_or_refresh_are_written_minimally_and_never_expire()
     {
         using var dir = new TempDirectory();

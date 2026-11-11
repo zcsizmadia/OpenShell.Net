@@ -48,6 +48,11 @@ internal sealed class OidcTokenBundleDto
 
     [JsonPropertyName("client_id")]
     public string? ClientId { get; set; }
+
+    /// <summary>True when the token came from the client-credentials grant; omitted when false, as the CLI writes it.</summary>
+    [JsonPropertyName("client_credentials")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ClientCredentials { get; set; }
 }
 
 /// <summary>The subset of the OpenID Connect discovery document the SDK uses.</summary>

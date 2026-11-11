@@ -1,4 +1,4 @@
-<!--
+| `oidc` | `Oidc` | The access token in `oidc_token.json`, renewed with its refresh token (or, for a client-credentials token, by repeating the grant) and written back. |<!--
 SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 SPDX-License-Identifier: Apache-2.0
 -->
@@ -65,9 +65,9 @@ The rules, as in the CLI:
 }
 ```
 
-`expires_at` is in Unix seconds. When the registration's `metadata.json` names both an issuer and a client id, a token whose file records another issuer or client id, or records neither, is never sent. When it names no issuer or no client id, there is nothing to check against: the stored token is sent as it is while it is valid, and it cannot be renewed.
+`expires_at` is in Unix seconds. The CLI adds `"client_credentials": true` when it obtained the token with the client-credentials grant (`openshell gateway login` with `OPENSHELL_OIDC_CLIENT_SECRET` set); such a token has no refresh token. When the registration's `metadata.json` names both an issuer and a client id, a token whose file records another issuer or client id, or records neither, is never sent. When it names no issuer or no client id, there is nothing to check against: the stored token is sent as it is while it is valid, and it cannot be renewed.
 
-A connected client treats a token as expired 30 seconds before `expires_at`. Then, and when the gateway rejects it as `Unauthenticated`, the client reads the file again (another process may have renewed it) and otherwise renews the token with its refresh token, unless `GatewayConnectOptions.AutoRefresh` is off. With `WriteBack` on (the default), the renewed tokens are written back to `oidc_token.json`, atomically and owner-only on Linux and macOS, as `OidcLogin.LoginAsync` writes them. A write-back that fails is ignored: the renewed token is still used by this process, and the file keeps the old one.
+A connected client treats a token as expired 30 seconds before `expires_at`. Then, and when the gateway rejects it as `Unauthenticated`, the client reads the file again (another process may have renewed it) and otherwise renews the token with its refresh token, unless `GatewayConnectOptions.AutoRefresh` is off. A token marked `client_credentials` is renewed, as in the CLI, by repeating the grant with the registration's audience and scopes and the secret from `GatewayConnectOptions.OidcClientSecretProvider`, else `$OPENSHELL_OIDC_CLIENT_SECRET`; without either, the client asks you to set the variable or sign in again. The secret is never written to disk. With `WriteBack` on (the default), the renewed tokens are written back to `oidc_token.json`, atomically and owner-only on Linux and macOS, as `OidcLogin.LoginAsync` writes them. A write-back that fails is ignored: the renewed token is still used by this process, and the file keeps the old one.
 
 To sign in from .NET, see [Signing in to a registered gateway](authentication.md#signing-in-to-a-registered-gateway).
 
