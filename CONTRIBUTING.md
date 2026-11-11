@@ -40,19 +40,19 @@ The gRPC protos (`proto/`) and the shared SDK conformance fixtures (`conformance
 ```shell
 scripts/sync-upstream.sh --check   # is UPSTREAM_VERSION the latest release?
 scripts/sync-upstream.sh           # sync to the latest release
-scripts/sync-upstream.sh v0.1.7    # or to a specific tag or commit
+scripts/sync-upstream.sh v0.1.8    # or to a specific tag or commit
 ```
 
 A weekly workflow does this automatically. When upstream publishes a release, it opens a pull request with the synced files and the result of the full check against them.
 
 ## Releasing
 
-Pushing a `v*` tag runs the Release workflow (`.github/workflows/release.yml`). An unprivileged job checks, packs (packages and `.snupkg` symbols), smoke-tests and AOT-publishes with the tag's version. A second job in the `nuget` environment, which only `v*` tags can deploy to, then pushes those packages to nuget.org through Trusted Publishing and creates the GitHub release. The version must start with `UPSTREAM_VERSION`: `v0.1.7`, `v0.1.7.1` for an SDK-only release, or `v0.1.7-preview.1`.
+Pushing a `v*` tag runs the Release workflow (`.github/workflows/release.yml`). An unprivileged job checks, packs (packages and `.snupkg` symbols), smoke-tests and AOT-publishes with the tag's version. A second job in the `nuget` environment, which only `v*` tags can deploy to, then pushes those packages to nuget.org through Trusted Publishing and creates the GitHub release. The version must start with `UPSTREAM_VERSION`: `v0.1.8`, `v0.1.8.1` for an SDK-only release, or `v0.1.8-preview.1`.
 
 To dry-run a release without publishing, run the workflow manually (Actions → Release → Run workflow), optionally with the version to check.
 
 ```shell
-git tag v0.1.7 && git push origin v0.1.7
+git tag v0.1.8 && git push origin v0.1.8
 ```
 
 After a release, raise `PackageValidationBaselineVersion` in `src/Directory.Build.props` to it, so a breaking public API change against the latest release fails the build.

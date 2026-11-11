@@ -64,6 +64,7 @@ public class RegistrationTests
             ("AllowInsecureAuth", "true"),
             ("DefaultTimeout", "00:00:30"),
             ("RouteToOwnerReplica", "false"),
+            ("TraceContextFromEnvironment", "true"),
             ("Retry:MaxAttempts", "6"),
             ("Retry:InitialBackoff", "00:00:00.250"),
             ("Retry:MaxBackoff", "00:00:10"),
@@ -85,6 +86,7 @@ public class RegistrationTests
         await Assert.That(options.AllowInsecureAuth).IsTrue();
         await Assert.That(options.DefaultTimeout).IsEqualTo(TimeSpan.FromSeconds(30));
         await Assert.That(options.RouteToOwnerReplica).IsFalse();
+        await Assert.That(options.TraceContextFromEnvironment).IsTrue();
         var policy = options.Retry!.ToPolicy();
         await Assert.That(policy.MaxAttempts).IsEqualTo(6);
         await Assert.That(policy.InitialBackoff).IsEqualTo(TimeSpan.FromMilliseconds(250));
@@ -101,6 +103,15 @@ public class RegistrationTests
 
         await Assert.That(options.ToClientOptions(null).RouteToOwnerReplica).IsFalse();
         await Assert.That(new OpenShellOptions { Address = options.Address }.ToClientOptions(null).RouteToOwnerReplica).IsTrue();
+    }
+
+    [Test]
+    public async Task Trace_context_from_environment_reaches_the_client_options()
+    {
+        var address = new Uri("https://gateway.example.com");
+
+        await Assert.That(new OpenShellOptions { Address = address, TraceContextFromEnvironment = true }.ToClientOptions(null).TraceContextFromEnvironment).IsTrue();
+        await Assert.That(new OpenShellOptions { Address = address }.ToClientOptions(null).TraceContextFromEnvironment).IsFalse();
     }
 
     [Test]

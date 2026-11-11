@@ -45,6 +45,9 @@ public sealed class OpenShellOptions
     /// <summary>Routes long-lived streams to the sandbox's owner replica; see <see cref="OpenShellClientOptions.RouteToOwnerReplica"/>.</summary>
     public bool RouteToOwnerReplica { get; set; } = true;
 
+    /// <summary>Forwards <c>TRACEPARENT</c> and <c>TRACESTATE</c> from the environment; see <see cref="OpenShellClientOptions.TraceContextFromEnvironment"/>.</summary>
+    public bool TraceContextFromEnvironment { get; set; }
+
     /// <summary>An authentication provider built in code. Takes precedence over <see cref="Token"/>; not bindable from configuration.</summary>
     public IAuthProvider? Auth { get; set; }
 
@@ -63,6 +66,7 @@ public sealed class OpenShellOptions
             DefaultTimeout = DefaultTimeout,
             Retry = Retry?.ToPolicy() ?? RetryPolicy.Default,
             RouteToOwnerReplica = RouteToOwnerReplica,
+            TraceContextFromEnvironment = TraceContextFromEnvironment,
             LoggerFactory = loggerFactory,
         };
     }

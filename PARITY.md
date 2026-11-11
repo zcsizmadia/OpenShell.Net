@@ -119,6 +119,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | `OpenShell.Net.DependencyInjection` (`AddOpenShell`, options binding, startup validation, keyed clients, factory, health check) | ✅ |
 | Fluent builder for the DI registration (`AddOpenShellClient`) | ✅ |
 | OpenTelemetry `ActivitySource` and `Meter` (`OpenShell.Sdk`, one client span and `rpc.client.duration` per RPC) | ✅ |
+| Opt-in forwarding of `TRACEPARENT`/`TRACESTATE` from the environment (`TraceContextFromEnvironment`), as the OpenShell CLI does since v0.1.8 (upstream PR 2931) | ✅ |
 | README (overview, install, quick start) and documentation site: getting started, 18 guides (including a feature parity summary), API reference (DocFX, GitHub Pages); every snippet compiled and most run against the fake in CI | ✅ |
 | `scripts/ci.sh`, CI workflow (Linux and Windows) | ✅ runs on every pull request and on `main` |
 | nuget.org release workflow (Trusted Publishing, tag validated against `UPSTREAM_VERSION`) | ✅ published v0.1.7 (packages, symbols, GitHub release) |
@@ -139,8 +140,8 @@ Reviewed on 2026-11-11 against the NVIDIA/OpenShell v0.1.8 release (80 commits a
 - CLI renewal of client-credentials OIDC tokens (upstream PR 4389): `oidc_token.json` gains an optional
   `client_credentials` marker, read and preserved here, and `GatewayClient` renews a marked token by repeating the
   grant (#90).
-- CLI forwarding of `TRACEPARENT`/`TRACESTATE` from the environment to the gateway (upstream PR 2931): not
-  implemented yet.
+- CLI forwarding of `TRACEPARENT`/`TRACESTATE` from the environment to the gateway (upstream PR 2931):
+  implemented as the opt-in `TraceContextFromEnvironment` (#92).
 - TypeScript SDK: forward tokens are revoked on close (upstream PR 5079). The .NET forwarder uses `ForwardTcp`
   and creates no SSH session tokens.
 - Proto changes (`ServiceRouteLease`, `SupervisorServiceAdvertisement`, `supports_service_advertisements`) are
