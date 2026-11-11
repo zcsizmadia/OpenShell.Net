@@ -35,8 +35,20 @@ public sealed record GatewayConnectOptions
     /// <summary>Per-call deadline for unary calls.</summary>
     public TimeSpan? DefaultTimeout { get; init; }
 
-    /// <summary>Renew an expired OIDC access token through the stored refresh token. Default true.</summary>
+    /// <summary>
+    /// Renew an expired OIDC access token through the stored refresh token, or, for a token the CLI obtained with
+    /// <c>client_credentials</c>, by repeating that grant. Default true.
+    /// </summary>
     public bool AutoRefresh { get; init; } = true;
+
+    /// <summary>
+    /// Supplies the client secret for renewing a token the CLI obtained with <c>client_credentials</c>. Defaults to
+    /// <c>$OPENSHELL_OIDC_CLIENT_SECRET</c>, as in the CLI. The secret is never written to disk.
+    /// </summary>
+    public Func<CancellationToken, ValueTask<string>>? OidcClientSecretProvider { get; init; }
+
+    /// <summary>Environment lookup for <c>$OPENSHELL_OIDC_CLIENT_SECRET</c> (tests).</summary>
+    internal Func<string, string?>? GetEnvironmentVariable { get; init; }
 
     /// <summary>Persist renewed tokens back to <c>oidc_token.json</c> so the CLI sees rotation. Default true.</summary>
     public bool WriteBack { get; init; } = true;

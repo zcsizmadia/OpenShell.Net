@@ -59,10 +59,14 @@ internal sealed class LazyEdgeAuth(string directory) : IAuthProvider
 /// <summary>
 /// OIDC bearer tokens read from the CLI's <c>oidc_token.json</c>. When the access token expires, or the gateway
 /// rejects it, the provider re-reads the file (another process may have renewed it) and otherwise renews through the
-/// stored refresh token, persisting rotation back to disk.
+/// stored refresh token, or by repeating the client-credentials grant for a token the CLI marked as issued by it,
+/// persisting the result back to disk.
 /// </summary>
 internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
 {
+    /// <summary>The environment variable the CLI reads the client secret from.</summary>
+    internal const string ClientSecretVariable = "OPENSHELL_OIDC_CLIENT_SECRET";
+
     private readonly GatewayMetadata _config;
     private readonly GatewayConnectOptions _options;
     private readonly RefreshableToken _token;
@@ -108,7 +112,10 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
             return Serve(disk);
         }
 
-        if (!_options.AutoRefresh || disk?.RefreshToken is null || issuer is null || clientId is null)
+        // As in the CLI: renew through the refresh token when there is one; a client-credentials token has none and is
+        // renewed by repeating that grant.
+        var clientCredentials = disk is not null && stored!.ClientCredentials;
+        if (!_options.AutoRefresh || disk is null || (disk.RefreshToken is null && !clientCredentials) || issuer is null || clientId is null)
         {
             throw new OidcException(
                 OidcFailure.Refresh,
@@ -117,17 +124,25 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
                     : $"OIDC token for gateway '{_config.Name}' is expired; run `openshell gateway login {_config.Name}`");
         }
 
-        var renewed = await OidcLogin.RefreshAsync(
-            new OidcOptions { Gateway = _config, HttpClient = _options.OidcHttpClient, TimeProvider = _options.TimeProvider },
-            disk.RefreshToken,
-            cancellationToken).ConfigureAwait(false);
-        renewed = renewed with { RefreshToken = renewed.RefreshToken ?? disk.RefreshToken };
+        OidcTokens renewed;
+        if (disk.RefreshToken is { } refreshToken)
+        {
+            renewed = await OidcLogin.RefreshAsync(
+                new OidcOptions { Gateway = _config, HttpClient = _options.OidcHttpClient, TimeProvider = _options.TimeProvider },
+                refreshToken,
+                cancellationToken).ConfigureAwait(false);
+            renewed = renewed with { RefreshToken = renewed.RefreshToken ?? refreshToken };
+        }
+        else
+        {
+            renewed = await RenewClientCredentialsAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         if (_options.WriteBack)
         {
             try
             {
-                OidcTokenFile.Write(_config.StateDirectory, renewed, issuer, clientId);
+                OidcTokenFile.Write(_config.StateDirectory, renewed, issuer, clientId, clientCredentials);
             }
             catch (OidcException)
             {
@@ -136,6 +151,37 @@ internal sealed class DiskOidcAuth : IAuthProvider, IDisposable
         }
 
         return Serve(renewed);
+    }
+
+    /// <summary>
+    /// Repeats the client-credentials grant with the gateway's audience and scopes. The secret comes from
+    /// <see cref="GatewayConnectOptions.OidcClientSecretProvider"/>, else <c>$OPENSHELL_OIDC_CLIENT_SECRET</c> as in the CLI.
+    /// </summary>
+    private async Task<OidcTokens> RenewClientCredentialsAsync(CancellationToken cancellationToken)
+    {
+        var provider = _options.OidcClientSecretProvider;
+        string? secret = null;
+        if (provider is null)
+        {
+            secret = (_options.GetEnvironmentVariable ?? Environment.GetEnvironmentVariable)(ClientSecretVariable);
+            if (string.IsNullOrEmpty(secret))
+            {
+                throw new OidcException(
+                    OidcFailure.Refresh,
+                    $"OIDC token for gateway '{_config.Name}' was issued via client credentials; set {ClientSecretVariable} to renew it, or run `openshell gateway login {_config.Name}`");
+            }
+        }
+
+        return await OidcLogin.ClientCredentialsAsync(
+            new OidcOptions
+            {
+                Gateway = _config,
+                ClientSecret = secret,
+                ClientSecretProvider = provider,
+                HttpClient = _options.OidcHttpClient,
+                TimeProvider = _options.TimeProvider,
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private bool IsUsable(OidcTokens tokens) =>

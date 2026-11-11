@@ -23,7 +23,7 @@ Sources: G Go, R Rust, T TypeScript, P Python.
 
 "Called" means the RPC is wired and unit tested against an in-memory gRPC invoker. See Testing for what has
 and has not run against a real gateway. Counts are against the protos of the NVIDIA/OpenShell release in
-`UPSTREAM_VERSION` (v0.1.7).
+`UPSTREAM_VERSION` (v0.1.8).
 
 ## Client surface (`IOpenShellClient`)
 
@@ -96,7 +96,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | User entries shadow system registrations only when they hold `metadata.json`; credentials (`mtls/`, `oidc_token.json`, `edge_token`) always live in the user gateway directory (`GatewayMetadata.StateDirectory`) | G R | ✅ |
 | List gateways and load metadata (sorted by name, unreadable registrations skipped, system default marked active) | G | ✅ |
 | CLI discovery rules from v0.1.7: `OPENSHELL_SYSTEM_GATEWAY_DIR` system root, FQDN and IPv4 gateway names, Windows device names rejected on every platform | G | ✅ |
-| mTLS bundle and token loading; renewed OIDC tokens are written back so the CLI stays signed in | G P | ✅ |
+| mTLS bundle and token loading; renewed OIDC tokens are written back so the CLI stays signed in; a token the CLI marked `client_credentials` is renewed by repeating the grant with `$OPENSHELL_OIDC_CLIENT_SECRET` or `OidcClientSecretProvider` (v0.1.8) | G P | ✅ |
 | `GatewayClient.Connect` convenience | P | ✅ |
 
 ## Testing support
@@ -127,16 +127,23 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Weekly upstream sync pull request (`upstream-sync.yml`) | ⚠️ enabled; has not run yet (opens a pull request when upstream releases) |
 | Editorconfig with analyzer severities and SPDX header enforcement | ✅ |
 
-## Upstream changes after v0.1.7
+## Upstream changes in v0.1.8
 
-Reviewed on 2026-11-08 against NVIDIA/OpenShell `main` (51 commits after v0.1.7):
+Reviewed on 2026-11-11 against the NVIDIA/OpenShell v0.1.8 release (80 commits after v0.1.7):
 
 - CLI-compatible `oidc_token.json` (upstream PR 4830) and the system `active_gateway` fallback (upstream PR 4917):
-  implemented here (#10, #11). The shared `oidc-token-bundle.json` fixture is vendored ahead of the next release.
+  implemented here (#10, #11). The shared `oidc-token-bundle.json` fixture is part of v0.1.8.
 - Go SDK: Listen tunnels are set up in parallel (upstream PR 4995). The .NET forwarder already opens each
   accepted connection independently.
 - Go SDK: `RefreshableToken` no longer serves an expired cached token after a failed refresh. The .NET
   `RefreshableToken` already surfaces the refresh error.
+- CLI renewal of client-credentials OIDC tokens (upstream PR 4389): `oidc_token.json` gains an optional
+  `client_credentials` marker, read and preserved here, and `GatewayClient` renews a marked token by repeating the
+  grant (#90).
+- CLI forwarding of `TRACEPARENT`/`TRACESTATE` from the environment to the gateway (upstream PR 2931): not
+  implemented yet.
+- TypeScript SDK: forward tokens are revoked on close (upstream PR 5079). The .NET forwarder uses `ForwardTcp`
+  and creates no SSH session tokens.
 - Proto changes (`ServiceRouteLease`, `SupervisorServiceAdvertisement`, `supports_service_advertisements`) are
   supervisor-session messages; no SDK-facing change.
 

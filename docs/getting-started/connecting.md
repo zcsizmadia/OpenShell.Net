@@ -15,7 +15,7 @@ If you use the OpenShell CLI, the gateways it registered are on disk with their 
 
 [!code-csharp[](../snippets/GettingStarted.cs#ConnectToRegisteredGateway)]
 
-With no name it uses the active gateway: `$OPENSHELL_GATEWAY`, then the user's `active_gateway` file, then the system one. An expired OIDC token is renewed with the stored refresh token and written back, so the CLI stays signed in too. [Gateway discovery](../guides/gateway-discovery.md) describes where registrations are read from.
+With no name it uses the active gateway: `$OPENSHELL_GATEWAY`, then the user's `active_gateway` file, then the system one. An expired OIDC token is renewed with the stored refresh token, or by repeating the client-credentials grant for a CI token, and written back, so the CLI stays signed in too. [Gateway discovery](../guides/gateway-discovery.md) describes where registrations are read from.
 
 ## An explicit endpoint
 
