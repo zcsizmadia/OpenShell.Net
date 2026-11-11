@@ -140,8 +140,8 @@ Reviewed on 2026-11-11 against the NVIDIA/OpenShell v0.1.8 release (80 commits a
 - CLI renewal of client-credentials OIDC tokens (upstream PR 4389): `oidc_token.json` gains an optional
   `client_credentials` marker, read and preserved here, and `GatewayClient` renews a marked token by repeating the
   grant (#90).
-- CLI forwarding of `TRACEPARENT`/`TRACESTATE` from the environment to the gateway (upstream PR 2931): not
-  implemented yet.
+- CLI forwarding of `TRACEPARENT`/`TRACESTATE` from the environment to the gateway (upstream PR 2931):
+  implemented as the opt-in `TraceContextFromEnvironment` (#92).
 - TypeScript SDK: forward tokens are revoked on close (upstream PR 5079). The .NET forwarder uses `ForwardTcp`
   and creates no SSH session tokens.
 - Proto changes (`ServiceRouteLease`, `SupervisorServiceAdvertisement`, `supports_service_advertisements`) are
