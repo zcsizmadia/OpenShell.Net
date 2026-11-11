@@ -57,6 +57,16 @@ public sealed record OpenShellClientOptions
     /// </summary>
     public bool RouteToOwnerReplica { get; init; } = true;
 
+    /// <summary>
+    /// Forwards the W3C trace context in the <c>TRACEPARENT</c> and <c>TRACESTATE</c> environment variables to the
+    /// gateway, as the OpenShell CLI does, so a CI pipeline that exports them parents the gateway's spans without any
+    /// OpenTelemetry setup in the process. The variables are read once, when the client is created; an invalid
+    /// <c>TRACEPARENT</c> is ignored. A call made while an <see cref="System.Diagnostics.Activity"/> is current
+    /// propagates that activity instead, and the SDK's own RPC spans use the environment context as their parent. Off
+    /// by default.
+    /// </summary>
+    public bool TraceContextFromEnvironment { get; init; }
+
     /// <summary>Throws <see cref="OpenShellException"/> (<see cref="OpenShellErrorKind.InvalidConfig"/>) when the options are inconsistent or unsafe, without connecting.</summary>
     public void Validate() => Transport.ChannelFactory.Validate(this);
 

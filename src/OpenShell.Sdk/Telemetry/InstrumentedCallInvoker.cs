@@ -10,7 +10,7 @@ namespace OpenShell;
 /// Wraps a <see cref="CallInvoker"/> so every RPC emits a client span and a duration measurement. When no listener
 /// is subscribed the wrapper hands the call straight to the inner invoker.
 /// </summary>
-internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
+internal sealed class InstrumentedCallInvoker(CallInvoker inner, EnvironmentTraceContext? trace = null) : CallInvoker
 {
     private static bool Enabled => OpenShellTelemetry.Source.HasListeners() || OpenShellTelemetry.Duration.Enabled;
 
@@ -19,10 +19,11 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
     {
         if (!Enabled)
         {
-            return inner.AsyncUnaryCall(method, host, options, request);
+            return inner.AsyncUnaryCall(method, host, WithTrace(options), request);
         }
 
-        var scope = CallScope.Start(method.ServiceName, method.Name);
+        var scope = CallScope.Start(method.ServiceName, method.Name, trace);
+        options = WithTrace(options, scope);
         var call = scope.Invoke(() => inner.AsyncUnaryCall(method, host, options, request));
         return new AsyncUnaryCall<TResponse>(
             Observe(call.ResponseAsync, scope), call.ResponseHeadersAsync, call.GetStatus, call.GetTrailers, call.Dispose);
@@ -33,11 +34,12 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
     {
         if (!Enabled)
         {
-            return inner.BlockingUnaryCall(method, host, options, request);
+            return inner.BlockingUnaryCall(method, host, WithTrace(options), request);
         }
 
         // Invoke records a failure itself.
-        var scope = CallScope.Start(method.ServiceName, method.Name);
+        var scope = CallScope.Start(method.ServiceName, method.Name, trace);
+        options = WithTrace(options, scope);
         var response = scope.Invoke(() => inner.BlockingUnaryCall(method, host, options, request));
         scope.Complete(null);
         return response;
@@ -48,10 +50,11 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
     {
         if (!Enabled)
         {
-            return inner.AsyncServerStreamingCall(method, host, options, request);
+            return inner.AsyncServerStreamingCall(method, host, WithTrace(options), request);
         }
 
-        var scope = CallScope.Start(method.ServiceName, method.Name);
+        var scope = CallScope.Start(method.ServiceName, method.Name, trace);
+        options = WithTrace(options, scope);
         var call = scope.Invoke(() => inner.AsyncServerStreamingCall(method, host, options, request));
         return new AsyncServerStreamingCall<TResponse>(
             new ObservedReader<TResponse>(call.ResponseStream, scope),
@@ -70,10 +73,11 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
     {
         if (!Enabled)
         {
-            return inner.AsyncClientStreamingCall(method, host, options);
+            return inner.AsyncClientStreamingCall(method, host, WithTrace(options));
         }
 
-        var scope = CallScope.Start(method.ServiceName, method.Name);
+        var scope = CallScope.Start(method.ServiceName, method.Name, trace);
+        options = WithTrace(options, scope);
         var call = scope.Invoke(() => inner.AsyncClientStreamingCall(method, host, options));
         return new AsyncClientStreamingCall<TRequest, TResponse>(
             call.RequestStream,
@@ -93,10 +97,11 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
     {
         if (!Enabled)
         {
-            return inner.AsyncDuplexStreamingCall(method, host, options);
+            return inner.AsyncDuplexStreamingCall(method, host, WithTrace(options));
         }
 
-        var scope = CallScope.Start(method.ServiceName, method.Name);
+        var scope = CallScope.Start(method.ServiceName, method.Name, trace);
+        options = WithTrace(options, scope);
         var call = scope.Invoke(() => inner.AsyncDuplexStreamingCall(method, host, options));
         return new AsyncDuplexStreamingCall<TRequest, TResponse>(
             call.RequestStream,
@@ -109,6 +114,52 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
                 call.Dispose();
                 scope.Complete(new OperationCanceledException());
             });
+    }
+
+    /// <summary>
+    /// Forwards the environment trace context as <c>traceparent</c> and <c>tracestate</c> metadata: the SDK span when
+    /// it was parented on that context, else the context itself when no activity is current. A call made under the
+    /// caller's own activity is left to HttpClient, which propagates that activity. HttpClient never replaces a
+    /// <c>traceparent</c> the request already carries, so the gateway sees this one even when other instrumentation
+    /// (such as grpc-dotnet's own activity) starts a span below it.
+    /// </summary>
+    private CallOptions WithTrace(CallOptions options, CallScope? scope = null)
+    {
+        if (trace is null || options.Headers?.Get(EnvironmentTraceContext.TraceParentHeader) is not null)
+        {
+            return options;
+        }
+
+        string parent;
+        string? state;
+        if (scope?.EnvironmentChild is { } span)
+        {
+            parent = span.Id!;
+            state = span.TraceStateString;
+        }
+        else if (Activity.Current is null)
+        {
+            parent = trace.TraceParent;
+            state = trace.TraceState;
+        }
+        else
+        {
+            return options;
+        }
+
+        var headers = new Metadata();
+        foreach (var entry in options.Headers ?? [])
+        {
+            headers.Add(entry);
+        }
+
+        headers.Add(EnvironmentTraceContext.TraceParentHeader, parent);
+        if (state is not null)
+        {
+            headers.Add(EnvironmentTraceContext.TraceStateHeader, state);
+        }
+
+        return options.WithHeaders(headers);
     }
 
     private static async Task<T> Observe<T>(Task<T> response, CallScope scope)
@@ -159,20 +210,29 @@ internal sealed class InstrumentedCallInvoker(CallInvoker inner) : CallInvoker
         private readonly string _method;
         private int _completed;
 
-        private CallScope(Activity? activity, string service, string method)
+        private CallScope(Activity? activity, string service, string method, bool environmentParent)
         {
             _activity = activity;
+            EnvironmentChild = environmentParent ? activity : null;
             _service = service;
             _method = method;
         }
 
-        public static CallScope Start(string service, string method)
+        /// <summary>The span, when it was started under the environment trace context rather than a current activity.</summary>
+        public Activity? EnvironmentChild { get; }
+
+        /// <summary>Starts the span under the current activity, or under the environment trace context when none is current.</summary>
+        public static CallScope Start(string service, string method, EnvironmentTraceContext? trace)
         {
-            var activity = OpenShellTelemetry.Source.StartActivity($"{service}/{method}", ActivityKind.Client);
+            var name = $"{service}/{method}";
+            var environmentParent = trace is not null && Activity.Current is null;
+            var activity = environmentParent
+                ? OpenShellTelemetry.Source.StartActivity(name, ActivityKind.Client, trace!.Context)
+                : OpenShellTelemetry.Source.StartActivity(name, ActivityKind.Client);
             activity?.SetTag("rpc.system", "grpc");
             activity?.SetTag("rpc.service", service);
             activity?.SetTag("rpc.method", method);
-            return new CallScope(activity, service, method);
+            return new CallScope(activity, service, method, environmentParent);
         }
 
         /// <summary>

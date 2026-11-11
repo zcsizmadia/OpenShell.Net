@@ -31,6 +31,7 @@ internal static class OpenShellConfigurationBinder
         options.AllowInsecureAuth = ReadBool(configuration, "AllowInsecureAuth") ?? options.AllowInsecureAuth;
         options.DefaultTimeout = ReadTimeSpan(configuration, "DefaultTimeout") ?? options.DefaultTimeout;
         options.RouteToOwnerReplica = ReadBool(configuration, "RouteToOwnerReplica") ?? options.RouteToOwnerReplica;
+        options.TraceContextFromEnvironment = ReadBool(configuration, "TraceContextFromEnvironment") ?? options.TraceContextFromEnvironment;
 
         var retry = configuration.GetSection("Retry");
         if (retry.Exists())

@@ -31,6 +31,7 @@ dotnet add package OpenShell.Net.DependencyInjection
 | `DefaultTimeout` | Deadline for unary calls, as a `TimeSpan` (`00:00:30`). Streaming calls such as exec, file transfers, watches, and forwards are not bounded by it; see [Retries and timeouts](retries.md#timeouts). |
 | `Retry` | `MaxAttempts`, `InitialBackoff`, `MaxBackoff`, `BackoffMultiplier`, `Jitter`, `RetryableStatusCodes`; unset values keep the defaults. |
 | `RouteToOwnerReplica` | [Owner routing](multi-replica.md) (`true`). |
+| `TraceContextFromEnvironment` | Forward `TRACEPARENT` and `TRACESTATE` to the gateway; see [Observability](observability.md#trace-context-from-ci) (`false`). |
 
 The client is created on first use and disposed with the container. Only a client that was built successfully is kept: when the build fails, for example because a certificate file is not there yet, that caller gets the error and the next resolution tries again. Concurrent first resolutions share one client per name. `services.AddHealthChecks().AddOpenShellHealthCheck()` adds a health check that calls the gateway health RPC; pass `gatewayName` to check a named registration.
 

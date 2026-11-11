@@ -56,6 +56,9 @@ public sealed record GatewayConnectOptions
     /// <summary>Settings for the edge tunnel when one is started.</summary>
     public EdgeTunnelOptions? EdgeTunnelOptions { get; init; }
 
+    /// <summary>Forwards <c>TRACEPARENT</c> and <c>TRACESTATE</c> from the environment; see <see cref="OpenShellClientOptions.TraceContextFromEnvironment"/>.</summary>
+    public bool TraceContextFromEnvironment { get; init; }
+
     /// <summary>Optional logger factory.</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
 
@@ -128,6 +131,7 @@ public static class GatewayClient
             DefaultTimeout = options.DefaultTimeout,
             LoggerFactory = options.LoggerFactory,
             HttpHandler = options.HttpHandler,
+            TraceContextFromEnvironment = options.TraceContextFromEnvironment,
         };
     }
 
