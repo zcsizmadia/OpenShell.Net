@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Feature parity
 
-OpenShell.Net is built from the protos of NVIDIA OpenShell v0.1.7 (the release in `UPSTREAM_VERSION`). This page summarizes what it covers and how that was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full, per-feature detail.
+OpenShell.Net is built from the protos of NVIDIA OpenShell v0.1.8 (the release in `UPSTREAM_VERSION`). This page summarizes what it covers and how that was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full, per-feature detail.
 
 ## Coverage
 
@@ -15,7 +15,7 @@ OpenShell.Net is built from the protos of NVIDIA OpenShell v0.1.7 (the release i
 
 ## Areas
 
-Every area is unit tested against an in-memory gRPC invoker. "Fake" means the area is also modelled by `FakeOpenShellClient` (see [Testing](testing.md)); "gateway" means the Integration workflow runs it against a real v0.1.7 gateway (Docker driver, mTLS) on pull requests, `main`, and nightly.
+Every area is unit tested against an in-memory gRPC invoker. "Fake" means the area is also modelled by `FakeOpenShellClient` (see [Testing](testing.md)); "gateway" means the Integration workflow runs it against a real v0.1.8 gateway (Docker driver, mTLS) on pull requests, `main`, and nightly.
 
 | Area | Status | Tested with |
 | --- | --- | --- |
