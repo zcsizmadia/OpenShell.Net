@@ -94,6 +94,7 @@ public class FakeServiceDiscoveryTests
         {
             await foreach (var _ in disabled.ServiceDiscovery.WatchAsync())
             {
+                // The disabled gateway rejects the watch before sending a snapshot.
             }
         }).Throws<OpenShellException>();
         var injected = await Assert.That(async () => await client.ServiceDiscovery.GetSnapshotAsync()).Throws<OpenShellException>();

@@ -97,6 +97,7 @@ public class GatewayApiTests
         {
             await foreach (var _ in client.ServiceDiscovery.WatchAsync(new ServiceRouteWatchOptions { Reconnect = false }, cancellationToken))
             {
+                // The gateway rejects the watch before sending a snapshot.
             }
         }).Throws<OpenShellException>();
 
