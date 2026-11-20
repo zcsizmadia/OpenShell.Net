@@ -527,10 +527,12 @@ public class EdgeTunnelProxyTests
     {
         var logger = new ListLogger();
         var deadPort = TestPorts.Free();
-        var proxy = EdgeTunnelProxy.Start($"http://127.0.0.1:{deadPort}", "edge.jwt-token", new EdgeTunnelOptions { ConnectTimeout = TimeSpan.FromSeconds(5), Logger = logger });
+        // A closed loopback port is refused only after TCP retries the SYN, about 2 s on Windows and longer on a slow
+        // runner, so the connect budget leaves room for the refusal rather than logging the connect timeout.
+        var proxy = EdgeTunnelProxy.Start($"http://127.0.0.1:{deadPort}", "edge.jwt-token", new EdgeTunnelOptions { ConnectTimeout = TimeSpan.FromSeconds(30), Logger = logger });
         using var client = await ConnectAsync(proxy);
 
-        var read = await client.GetStream().ReadAsync(new byte[8]).AsTask().WaitAsync(TimeSpan.FromSeconds(20));
+        var read = await client.GetStream().ReadAsync(new byte[8]).AsTask().WaitAsync(TimeSpan.FromSeconds(60));
         await proxy.DisposeAsync();
 
         await Assert.That(read).IsEqualTo(0);
