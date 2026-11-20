@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 
-# Weekly: if NVIDIA/OpenShell has a newer release than UPSTREAM_VERSION, sync the vendored protos and
+# Weekly: if ai-openshell/OpenShell has a newer release than UPSTREAM_VERSION, sync the vendored protos and
 # conformance fixtures with scripts/sync-upstream.sh, run the full check against them, and open (or update)
 # a pull request with the result. Run it by hand with a ref to sync to a specific tag or commit.
 #
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: NVIDIA/OpenShell tag or commit to sync to (default latest release)
+        description: ai-openshell/OpenShell tag or commit to sync to (default latest release)
         required: false
 
 permissions:
@@ -29,7 +29,7 @@ env:
 
 jobs:
   sync:
-    name: Sync from NVIDIA/OpenShell
+    name: Sync from ai-openshell/OpenShell
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -101,13 +101,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git add UPSTREAM_VERSION proto conformance
-          git commit -m "chore(upstream): sync protos and conformance fixtures to NVIDIA/OpenShell $TARGET"
+          git commit -m "chore(upstream): sync protos and conformance fixtures to ai-openshell/OpenShell $TARGET"
           git push --force origin "$branch"
 
           {
-            echo "Syncs the vendored protos and conformance fixtures from NVIDIA/OpenShell $CURRENT to $TARGET."
+            echo "Syncs the vendored protos and conformance fixtures from ai-openshell/OpenShell $CURRENT to $TARGET."
             echo
-            echo "- Upstream changes: https://github.com/NVIDIA/OpenShell/compare/$CURRENT...$TARGET"
+            echo "- Upstream changes: https://github.com/ai-openshell/OpenShell/compare/$CURRENT...$TARGET"
             echo "- Format, build, unit tests on every framework, and pack against the synced files: **$RESULT** (log in the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
             echo
             echo "New RPCs or messages in the protos are not wrapped by the SDK yet: review the proto diff and update PARITY.md."
@@ -118,8 +118,8 @@ jobs:
             gh pr edit "$branch" --body-file body.md
           else
             gh pr create --head "$branch" --base main \
-              --title "chore(upstream): sync to NVIDIA/OpenShell $TARGET" --body-file body.md
+              --title "chore(upstream): sync to ai-openshell/OpenShell $TARGET" --body-file body.md
           fi
           if [[ "$RESULT" != "passed" ]]; then
-            echo "::warning::Checks failed against NVIDIA/OpenShell $TARGET; see the pull request."
+            echo "::warning::Checks failed against ai-openshell/OpenShell $TARGET; see the pull request."
           fi

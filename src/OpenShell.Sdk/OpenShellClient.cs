@@ -47,6 +47,9 @@ public interface IOpenShellClient : IDisposable
     /// <summary>Service exposure.</summary>
     IServiceClient Services { get; }
 
+    /// <summary>Service route discovery for ingress proxies and controllers.</summary>
+    IServiceDiscoveryClient ServiceDiscovery { get; }
+
     /// <summary>SSH relay sessions and tunnels.</summary>
     ISshClient Ssh { get; }
 
@@ -89,6 +92,7 @@ public sealed class OpenShellClient : IOpenShellClient
         Providers = new ProviderClient(core, workspace);
         SandboxProviders = new SandboxProviderClient(core, workspace);
         Services = new ServiceClient(core, workspace);
+        ServiceDiscovery = new ServiceDiscoveryClient(core, workspace);
         Ssh = new SshClient(core, workspace);
         Tcp = new TcpForwardClient(core, workspace, Ssh);
         Files = new FileClient(Exec);
@@ -134,6 +138,9 @@ public sealed class OpenShellClient : IOpenShellClient
     public IServiceClient Services { get; }
 
     /// <inheritdoc />
+    public IServiceDiscoveryClient ServiceDiscovery { get; }
+
+    /// <inheritdoc />
     public ISshClient Ssh { get; }
 
     /// <inheritdoc />
@@ -151,6 +158,13 @@ public sealed class OpenShellClient : IOpenShellClient
     /// updates are enabled (<c>[openshell.gateway] enable_sandbox_updates = true</c>).
     /// </summary>
     public Openshell.V1.SandboxUpdates.SandboxUpdatesClient RawSandboxUpdates => _core.SandboxUpdates;
+
+    /// <summary>
+    /// The generated gRPC client for the separate <c>openshell.v1.ServiceDiscovery</c> service (new in v0.1.9), on the
+    /// same connection, authentication, retry, and telemetry pipeline as <see cref="Raw"/>. The curated surface is
+    /// <see cref="ServiceDiscovery"/>.
+    /// </summary>
+    public Openshell.V1.ServiceDiscovery.ServiceDiscoveryClient RawServiceDiscovery => _core.ServiceDiscovery;
 
     /// <inheritdoc />
     public IOpenShellClient InWorkspace(string workspace)

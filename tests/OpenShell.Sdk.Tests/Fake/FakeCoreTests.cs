@@ -30,6 +30,7 @@ public class FakeCoreTests
         await Assert.That(client.Providers).IsNotNull();
         await Assert.That(client.SandboxProviders).IsNotNull();
         await Assert.That(client.Services).IsNotNull();
+        await Assert.That(client.ServiceDiscovery).IsNotNull();
         await Assert.That(client.Ssh).IsNotNull();
         await Assert.That(client.Tcp).IsNotNull();
         await Assert.That(client.Files).IsNotNull();

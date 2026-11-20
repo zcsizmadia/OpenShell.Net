@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # OpenShell.Net
 
-OpenShell.Net is a .NET (C#) client for the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It exposes a curated, async API over the gateway's gRPC contract: sandboxes, exec, file transfer, port forwarding, providers, policy, workspaces, and more. It targets `net8.0` and `net10.0` (apps on .NET 11 use the `net10.0` build) and is trimming and AOT compatible.
+OpenShell.Net is a .NET (C#) client for the [NVIDIA OpenShell](https://github.com/ai-openshell/OpenShell) gateway. It exposes a curated, async API over the gateway's gRPC contract: sandboxes, exec, file transfer, port forwarding, providers, policy, workspaces, and more. It targets `net8.0` and `net10.0` (apps on .NET 11 use the `net10.0` build) and is trimming and AOT compatible.
 
 > [!NOTE]
 > This is a community project. It is not affiliated with, endorsed by, or supported by NVIDIA. Report problems in the repository's [issues](https://github.com/zcsizmadia/OpenShell.Net/issues), not upstream.
@@ -30,4 +30,4 @@ The public API lives in the `OpenShell` namespace (with `OpenShell.Gateway`, `Op
 
 ## Which gateway version
 
-The package version is the NVIDIA OpenShell release the SDK is built from, so `OpenShell.Net 0.1.8.x` pairs with an OpenShell 0.1.8 gateway. See [Versioning](guides/versioning.md). [Feature parity](guides/parity.md) summarizes which gateway features the SDK covers and how each was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full detail.
+The package version is the NVIDIA OpenShell release the SDK is built from, so `OpenShell.Net 0.1.9.x` pairs with an OpenShell 0.1.9 gateway. See [Versioning](guides/versioning.md). [Feature parity](guides/parity.md) summarizes which gateway features the SDK covers and how each was tested; [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) has the full detail.

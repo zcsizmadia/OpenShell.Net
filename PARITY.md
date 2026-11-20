@@ -18,12 +18,13 @@ Sources: G Go, R Rust, T TypeScript, P Python.
 |---|---|
 | User-facing RPCs in the `OpenShell` service | ✅ 67 of 67 called by the curated client |
 | `SandboxUpdates` service (`UpdateSandbox`, new in v0.1.7; needs compute-driver support and explicit gateway activation) | ✅ curated as `ISandboxClient.UpdateAsync`; also `OpenShellClient.RawSandboxUpdates` |
+| `ServiceDiscovery` service (`GetServiceRouteSnapshot`, `WatchServiceRoutes`, new in v0.1.9; needs the gateway's supervisor app listener) | ✅ curated as `IOpenShellClient.ServiceDiscovery`; also `OpenShellClient.RawServiceDiscovery` |
 | Supervisor and sandbox-internal RPCs (`ConnectSupervisor`, `RelayStream`, `PeerRelay`, `Peer*`, `PushSandboxLogs`, `Report*`, `FinalizeMainProcessExit`, `GetSandboxProviderEnvironment`, `ExchangeProviderSubjectToken`, `IssueSandboxToken`, `RefreshSandboxToken`, `SubmitPolicyAnalysis`) | Excluded by design; no SDK implements them. Reachable through `OpenShellClient.Raw`. |
 | Extension services (`ComputeDriver`, `CredentialDriver`, `GatewayInterceptor`, `SupervisorMiddleware`) | Excluded: they are contracts to implement, not call |
 
 "Called" means the RPC is wired and unit tested against an in-memory gRPC invoker. See Testing for what has
 and has not run against a real gateway. Counts are against the protos of the NVIDIA/OpenShell release in
-`UPSTREAM_VERSION` (v0.1.8).
+`UPSTREAM_VERSION` (v0.1.9).
 
 ## Client surface (`IOpenShellClient`)
 
@@ -42,6 +43,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Exec | `RunAsync`, `StreamAsync`, `InteractiveAsync` (stdin, resize, cancel), `ExecPythonAsync` | G R T P | ✅ |
 | Files | upload and download for files, streams, and directories (tar over exec) | G | ✅ needs `tar` and `sh` in the sandbox image; files, streams, and directories round-trip against a real sandbox in the Integration workflow |
 | Services | expose, get, list, delete, service exposures at create | G R T P | ✅ |
+| Service route discovery | `ServiceDiscovery.GetSnapshotAsync`, `WatchAsync` (reopens at the gateway's watch lifetime, skips repeated revisions, reconnects with backoff); fake derives routes from domain services of Ready sandboxes (v0.1.9) | R (raw client only) | ✅ unit and fake; against a real gateway only as the rejection of a gateway without the supervisor app listener |
 | SSH | create and revoke session, `TunnelAsync` | G T | ✅ |
 | TCP | `ForwardAsync` (duplex stream), `ListenAsync` (local listener) | G T | ✅ |
 | Config | sandbox and gateway config, policy and setting updates, global scope | G T | ✅ |
@@ -51,7 +53,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Provider profiles | list, get, import, update, lint, delete, platform view; `StablePlaceholder` with a gateway support check (v0.1.7) | G | ✅ lint, import, update, delete, and the platform view run against a real gateway in the Integration workflow, which ships no built-in profiles |
 | Provider refresh | status, configure, rotate, delete | G | ✅ |
 | Rootfs staging | `BeginStagingAsync`, `StageAsync`, `RootfsDriverConfig.WithStagingToken` | none | ✅ |
-| Raw access | generated gRPC clients on `OpenShellClient.Raw` and `OpenShellClient.RawSandboxUpdates`; `SandboxSpec.RawSpec` hook | R T | ✅ |
+| Raw access | generated gRPC clients on `OpenShellClient.Raw`, `OpenShellClient.RawSandboxUpdates`, and `OpenShellClient.RawServiceDiscovery`; `SandboxSpec.RawSpec` hook | R T | ✅ |
 | Pagination | `Pager<T>` (items and pages), `ToListAsync` | G R T P | ✅ |
 | Errors | `OpenShellException` with kind, gRPC status, and predicates | G R T P | ✅ |
 | Error details | `ErrorInfo`, `FieldViolations`, `RetryDelay` decoded from `google.rpc` details, validated against the call status | G R T P | ✅ |
@@ -108,7 +110,7 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | `AddOpenShellFake()` to swap the fake into a DI container | none | ⬜ |
 | Shared conformance fixtures consumed by tests (`conformance/*.json`) | G T P | ✅ |
 | Unit tests on an in-memory gRPC invoker, on the net8.0, net10.0 and net11.0 runtimes (Linux and Windows CI) | G T P | ✅ |
-| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, config and policy reads, policy draft review, providers and provider profiles, sandbox provider attach and detach, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection; provider credential export is checked only as a rejection (no operator certificate); provider refresh is not run (it needs a token endpoint) |
+| Integration tests against a real gateway (`OPENSHELL_GATEWAY_ADDRESS`) | G | ✅ the Integration workflow (`scripts/integration-gateway.sh`) runs them on pull requests, `main`, and nightly against the upstream gateway release in `UPSTREAM_VERSION` with the Docker driver and mTLS: lifecycle, stop, update and start, exec (one-shot, streaming, interactive), files, watch and logs, TCP forward and listen, SSH session and tunnel, services, service discovery (as the rejection of a gateway without the supervisor app listener), config and policy reads, policy draft review, providers and provider profiles, sandbox provider attach and detach, pagination, and error kinds. Python exec skips because the default image has no `python3`; suspend is checked only as the Docker driver's rejection; provider credential export is checked only as a rejection (no operator certificate); provider refresh is not run (it needs a token endpoint) |
 | Testcontainers fixture for a one-command local gateway | none | ⬜ |
 
 ## Packaging, docs, and CI
@@ -126,6 +128,24 @@ and has not run against a real gateway. Counts are against the protos of the NVI
 | Vendored upstream protos and conformance fixtures, `scripts/sync-upstream.sh` (optional files for fixtures newer than the release), drift check in CI | ✅ the drift check runs in CI and fails on script errors |
 | Weekly upstream sync pull request (`upstream-sync.yml`) | ⚠️ enabled; has not run yet (opens a pull request when upstream releases) |
 | Editorconfig with analyzer severities and SPDX header enforcement | ✅ |
+
+## Upstream changes in v0.1.9
+
+Reviewed on 2026-11-20 against the ai-openshell/OpenShell v0.1.9 release (51 commits after v0.1.8; the repository
+moved from `NVIDIA/OpenShell`, which redirects, while the container images stay at `ghcr.io/nvidia/openshell`):
+
+- New `openshell.v1.ServiceDiscovery` service (upstream PR 4941): `GetServiceRouteSnapshot` and the bounded
+  `WatchServiceRoutes` stream of full replacement snapshots. The Rust SDK adds only the raw client
+  (`raw_service_discovery`); here it is curated as `IOpenShellClient.ServiceDiscovery` and reachable raw as
+  `OpenShellClient.RawServiceDiscovery` (#97). It is the only proto change; `sandbox.proto`, `datamodel.proto`,
+  `options.proto`, and the conformance fixtures are unchanged.
+- CLI `sandbox create --timeout` (upstream PR 5545) bounds how long the CLI waits for provisioning. The SDK's
+  `WaitReadyAsync` already takes one (`WaitOptions.Timeout`).
+- Inspected HTTP responses carry `X-OpenShell-Request-ID` (upstream PR 5214). It is set by the sandbox proxy on
+  traffic inside the sandbox, not on gateway responses, so the SDK has nothing to read.
+- Gateway, supervisor, Helm, and OCSF audit changes (write-method denials report Create, Update, or Delete; private
+  IP literals no longer match wildcard policy endpoints) need no SDK change.
+- The Go SDK moved to `github.com/ai-openshell/sdk-go`.
 
 ## Upstream changes in v0.1.8
 

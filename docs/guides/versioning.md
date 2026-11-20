@@ -14,7 +14,7 @@ The package version is the NVIDIA OpenShell release the SDK is built from, with 
 | `0.1.8.1`, `0.1.8.2`, ... | `v0.1.8`, with SDK fixes and additions |
 | `0.1.9` | `v0.1.9` |
 
-So `OpenShell.Net 0.1.8.x` pairs with an OpenShell 0.1.8 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the [release notes](https://github.com/zcsizmadia/OpenShell.Net/releases) say so.
+So `OpenShell.Net 0.1.9.x` pairs with an OpenShell 0.1.9 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the [release notes](https://github.com/zcsizmadia/OpenShell.Net/releases) say so.
 
 The generated protobuf bindings come from the `proto/` files of the release recorded in [`UPSTREAM_VERSION`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/UPSTREAM_VERSION). Use a gateway from that release or a compatible one: curated methods stay compatible while the underlying RPC contracts do. Features that need gateway-side support, such as sandbox updates or stable placeholders, fail with a typed error (`Conflict` or `Unimplemented`) on a gateway that lacks them.
 

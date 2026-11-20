@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Zoltan Csizmadia
 # SPDX-License-Identifier: Apache-2.0
 #
-# Vendors the files this SDK shares with NVIDIA/OpenShell (gRPC protos and SDK conformance
+# Vendors the files this SDK shares with ai-openshell/OpenShell (gRPC protos and SDK conformance
 # fixtures) from an upstream release, and records the release tag in UPSTREAM_VERSION.
 #
-#   scripts/sync-upstream.sh            sync to the latest NVIDIA/OpenShell release
+#   scripts/sync-upstream.sh            sync to the latest ai-openshell/OpenShell release
 #   scripts/sync-upstream.sh v0.1.7     sync to a specific release tag (or any ref)
 #   scripts/sync-upstream.sh --check    exit 1 if UPSTREAM_VERSION is behind the latest release
 #   scripts/sync-upstream.sh --latest   print the latest release tag
@@ -13,7 +13,7 @@
 # Set GITHUB_TOKEN to avoid the anonymous GitHub API rate limit.
 set -euo pipefail
 
-repo="NVIDIA/OpenShell"
+repo="ai-openshell/OpenShell"
 # upstream path -> local path, relative to each repository root. A leading "?" marks a file that may not exist
 # at the requested tag yet (it was vendored from a later upstream commit); the local copy is then kept.
 files=(
@@ -97,6 +97,6 @@ printf '%s\n' "$tag" > "$version_file"
 badge_tag="${tag//-/--}"
 sed -i -E \
   -e "s#(badge/NVIDIA%20OpenShell-)[^?]*(-76B900\?)#\1${badge_tag}\2#" \
-  -e "s#(github\.com/NVIDIA/OpenShell/releases/tag/)[^)]*\)#\1${tag})#" \
+  -e "s#(github\.com/ai-openshell/OpenShell/releases/tag/)[^)]*\)#\1${tag})#" \
   "$root/README.md"
 echo "Synced vendored files from $repo $tag (was $current)."

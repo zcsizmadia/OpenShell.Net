@@ -7,7 +7,7 @@
 # The build job has no secrets and no write access. Only the publish job, in the nuget environment (deployments limited
 # to v* tags), can push to nuget.org, and it pushes exactly the packages the build job produced.
 #
-# Versions follow the NVIDIA/OpenShell release in UPSTREAM_VERSION, with a fourth component for SDK-only releases
+# Versions follow the ai-openshell/OpenShell release in UPSTREAM_VERSION, with a fourth component for SDK-only releases
 # (see src/Directory.Build.props):
 #   v0.1.7            first release built from upstream v0.1.7
 #   v0.1.7.1          SDK-only release on the same upstream protos

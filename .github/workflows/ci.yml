@@ -76,9 +76,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # Informational: reports when NVIDIA/OpenShell has a newer release than the vendored protos
+      # Informational: reports when ai-openshell/OpenShell has a newer release than the vendored protos
       # and fixtures. The weekly upstream-sync workflow opens the update pull request.
-      - name: Compare UPSTREAM_VERSION with the latest NVIDIA/OpenShell release
+      - name: Compare UPSTREAM_VERSION with the latest ai-openshell/OpenShell release
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -86,7 +86,7 @@ jobs:
           status=0
           scripts/sync-upstream.sh --check || status=$?
           if [ "$status" -eq 1 ]; then
-            echo "::warning title=Upstream drift::$(cat UPSTREAM_VERSION | tr -d '\n') is behind the latest NVIDIA/OpenShell release ($(scripts/sync-upstream.sh --latest)). Run scripts/sync-upstream.sh or the upstream-sync workflow."
+            echo "::warning title=Upstream drift::$(cat UPSTREAM_VERSION | tr -d '\n') is behind the latest ai-openshell/OpenShell release ($(scripts/sync-upstream.sh --latest)). Run scripts/sync-upstream.sh or the upstream-sync workflow."
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi

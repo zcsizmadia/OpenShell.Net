@@ -23,6 +23,7 @@ internal sealed class ClientCore : IDisposable
         _channel = channel;
         Grpc = new GrpcService.OpenShellClient(invoker);
         SandboxUpdates = new Openshell.V1.SandboxUpdates.SandboxUpdatesClient(invoker);
+        ServiceDiscovery = new Openshell.V1.ServiceDiscovery.ServiceDiscoveryClient(invoker);
         Routing = new Transport.OwnerRouting(this);
     }
 
@@ -35,6 +36,9 @@ internal sealed class ClientCore : IDisposable
 
     /// <summary>The separate <c>openshell.v1.SandboxUpdates</c> service, on the same connection and call pipeline.</summary>
     public Openshell.V1.SandboxUpdates.SandboxUpdatesClient SandboxUpdates { get; }
+
+    /// <summary>The separate <c>openshell.v1.ServiceDiscovery</c> service, on the same connection and call pipeline.</summary>
+    public Openshell.V1.ServiceDiscovery.ServiceDiscoveryClient ServiceDiscovery { get; }
 
     public TimeProvider Time { get; init; } = TimeProvider.System;
 

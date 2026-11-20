@@ -45,6 +45,13 @@ public sealed record FakeGatewayOptions
     public bool SandboxUpdatesEnabled { get; init; } = true;
 
     /// <summary>
+    /// Whether the gateway serves service route discovery (its supervisor app listener is enabled). When
+    /// <see langword="false"/>, discovery fails with <see cref="OpenShellErrorKind.Conflict"/>, as the gateway's
+    /// <c>FailedPrecondition</c> maps.
+    /// </summary>
+    public bool ServiceDiscoveryEnabled { get; init; } = true;
+
+    /// <summary>
     /// How long a sandbox deletion takes. Zero deletes immediately and reports <see cref="DeletionOutcome.Completed"/>;
     /// a positive delay reports <see cref="DeletionOutcome.Accepted"/> and removes the sandbox after the delay.
     /// </summary>
