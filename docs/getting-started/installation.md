@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 
 - .NET 8 or later. The packages ship `net8.0` and `net10.0` builds; apps on .NET 9 use the `net8.0` build, and apps on .NET 11 use the `net10.0` build.
 - An NVIDIA OpenShell gateway from the release the package was built from, or a compatible one. See [Versioning](../guides/versioning.md).
-- Optional: the [OpenShell CLI](https://github.com/NVIDIA/OpenShell). When it has registered a gateway (`openshell gateway ...`), the SDK can reuse that registration and its credentials.
+- Optional: the [OpenShell CLI](https://github.com/ai-openshell/OpenShell). When it has registered a gateway (`openshell gateway ...`), the SDK can reuse that registration and its credentials.
 
 The packages are trimming and Native AOT compatible.
 

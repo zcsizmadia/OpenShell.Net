@@ -68,7 +68,7 @@ pull() {
 
 # ── Gateway binary ───────────────────────────────────────────────────
 asset="openshell-gateway-$target.tar.gz"
-release_url="https://github.com/NVIDIA/OpenShell/releases/download/$tag"
+release_url="https://github.com/ai-openshell/OpenShell/releases/download/$tag"
 gateway_image="$registry/gateway:$version"
 bin_dir="$cache_dir/$tag-$target"
 gateway_bin="$bin_dir/openshell-gateway"

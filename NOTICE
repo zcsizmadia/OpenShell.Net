@@ -6,7 +6,7 @@ OpenShell. It is not affiliated with, endorsed by, or supported by NVIDIA.
 
 This product includes Protocol Buffers definitions (proto/*.proto) and SDK
 conformance fixtures (conformance/*) from
-NVIDIA OpenShell (https://github.com/NVIDIA/OpenShell),
+NVIDIA OpenShell (https://github.com/ai-openshell/OpenShell),
 Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 Licensed under the Apache License, Version 2.0. The vendored release is
 recorded in UPSTREAM_VERSION. The files are unmodified.
