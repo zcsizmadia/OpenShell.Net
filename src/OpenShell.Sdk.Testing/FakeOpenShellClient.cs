@@ -53,6 +53,7 @@ public sealed class FakeOpenShellClient : IOpenShellClient
         Providers = new FakeProviderClient(gateway, Workspace);
         SandboxProviders = new FakeSandboxProviderClient(gateway, Workspace);
         Services = new FakeServiceClient(gateway, Workspace);
+        ServiceDiscovery = new FakeServiceDiscoveryClient(gateway, Workspace);
         Ssh = new FakeSshClient(gateway, Workspace);
         Tcp = new FakeTcpClient(gateway, Workspace);
         Files = new FakeFileClient(gateway, Workspace);
@@ -99,6 +100,9 @@ public sealed class FakeOpenShellClient : IOpenShellClient
 
     /// <inheritdoc />
     public IServiceClient Services { get; }
+
+    /// <inheritdoc />
+    public IServiceDiscoveryClient ServiceDiscovery { get; }
 
     /// <inheritdoc />
     public ISshClient Ssh { get; }

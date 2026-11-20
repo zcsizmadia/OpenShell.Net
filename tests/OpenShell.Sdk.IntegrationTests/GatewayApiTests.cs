@@ -84,6 +84,28 @@ public class GatewayApiTests
     }
 
     [Test]
+    [Timeout(120_000)]
+    public async Task Service_discovery_is_served_and_needs_the_app_listener(CancellationToken cancellationToken)
+    {
+        // The test gateway runs without the supervisor app listener, so the separate ServiceDiscovery service answers
+        // both calls with FailedPrecondition, which proves the service is registered and the request is understood.
+        using var client = GatewayFixture.Connect();
+
+        var snapshot = await Assert.That(async () => await client.ServiceDiscovery.GetSnapshotAsync(cancellationToken))
+            .Throws<OpenShellException>();
+        var watch = await Assert.That(async () =>
+        {
+            await foreach (var _ in client.ServiceDiscovery.WatchAsync(new ServiceRouteWatchOptions { Reconnect = false }, cancellationToken))
+            {
+            }
+        }).Throws<OpenShellException>();
+
+        await Assert.That(snapshot!.Kind).IsEqualTo(OpenShellErrorKind.Conflict);
+        await Assert.That(snapshot.Message).Contains("app listener");
+        await Assert.That(watch!.Kind).IsEqualTo(OpenShellErrorKind.Conflict);
+    }
+
+    [Test]
     [Timeout(600_000)]
     public async Task Config_and_policy_reads_succeed(CancellationToken cancellationToken)
     {
