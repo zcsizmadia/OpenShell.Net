@@ -10,10 +10,10 @@ SPDX-License-Identifier: Apache-2.0
 [![NuGet](https://img.shields.io/nuget/v/OpenShell.Net?logo=nuget&label=NuGet)](https://www.nuget.org/packages/OpenShell.Net)
 [![Release](https://img.shields.io/github/v/release/zcsizmadia/OpenShell.Net?include_prereleases&sort=semver&label=release)](https://github.com/zcsizmadia/OpenShell.Net/releases)
 [![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%2010.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
-[![NVIDIA OpenShell](https://img.shields.io/badge/NVIDIA%20OpenShell-v0.1.8-76B900?logo=nvidia)](https://github.com/NVIDIA/OpenShell/releases/tag/v0.1.8)
+[![NVIDIA OpenShell](https://img.shields.io/badge/NVIDIA%20OpenShell-v0.1.9-76B900?logo=nvidia)](https://github.com/ai-openshell/OpenShell/releases/tag/v0.1.9)
 [![License](https://img.shields.io/github/license/zcsizmadia/OpenShell.Net)](https://github.com/zcsizmadia/OpenShell.Net/blob/main/LICENSE)
 
-.NET client for the [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) gateway. It targets `net8.0` and `net10.0` (apps on .NET 11 use the `net10.0` build, and the tests also run on .NET 11), is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
+.NET client for the [NVIDIA OpenShell](https://github.com/ai-openshell/OpenShell) gateway. It targets `net8.0` and `net10.0` (apps on .NET 11 use the `net10.0` build, and the tests also run on .NET 11), is trimming and AOT compatible, and exposes a curated, async API over the gateway's gRPC contract.
 
 > This is a community project. It is not affiliated with, endorsed by, or supported by NVIDIA. Report problems in this repository's [issues](https://github.com/zcsizmadia/OpenShell.Net/issues), not upstream.
 
@@ -30,11 +30,11 @@ The package version is the NVIDIA OpenShell release the SDK is built from, with 
 | `0.1.8.1`, `0.1.8.2`, ... | `v0.1.8`, with SDK fixes and additions |
 | `0.1.9` | `v0.1.9` |
 
-So `OpenShell.Net 0.1.8.x` pairs with an OpenShell 0.1.8 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the release notes say so. The assembly metadata `OpenShellUpstreamRelease` records the release at run time.
+So `OpenShell.Net 0.1.9.x` pairs with an OpenShell 0.1.9 gateway. While OpenShell is at 0.x, an SDK-only release can also change the SDK's API; the release notes say so. The assembly metadata `OpenShellUpstreamRelease` records the release at run time.
 
 ## Parity
 
-Built from NVIDIA OpenShell v0.1.8, the client covers all 67 user-facing gateway RPCs plus the `SandboxUpdates` service, and targets the union of the Go, Rust, TypeScript, and Python SDKs. It is integration-tested against a real v0.1.8 gateway in CI. See the [feature parity summary](https://zcsizmadia.github.io/OpenShell.Net/guides/parity.html) and [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) for details.
+Built from NVIDIA OpenShell v0.1.9, the client covers all 67 user-facing gateway RPCs plus the `SandboxUpdates` and `ServiceDiscovery` services, and targets the union of the Go, Rust, TypeScript, and Python SDKs. It is integration-tested against a real v0.1.9 gateway in CI. See the [feature parity summary](https://zcsizmadia.github.io/OpenShell.Net/guides/parity.html) and [`PARITY.md`](https://github.com/zcsizmadia/OpenShell.Net/blob/main/PARITY.md) for details.
 
 ## Install
 

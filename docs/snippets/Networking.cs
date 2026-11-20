@@ -78,4 +78,19 @@ internal static class Networking
         await client.Services.DeleteAsync("agent-1", "web");
         #endregion
     }
+
+    internal static async Task ServiceDiscoveryAsync(IOpenShellClient client, CancellationToken cancellationToken)
+    {
+        #region ServiceDiscovery
+        // Each snapshot is the complete set of routes in the workspace; replace what you had.
+        await foreach (var snapshot in client.ServiceDiscovery.WatchAsync(cancellationToken: cancellationToken))
+        {
+            foreach (var route in snapshot.Routes)
+            {
+                // Dial the supervisor endpoint, sending the hostname as TLS server name and HTTP authority.
+                Console.WriteLine($"{route.Hostname} -> {route.Endpoint?.Host}:{route.Endpoint?.Port} until {route.ExpiresAt:O}");
+            }
+        }
+        #endregion
+    }
 }

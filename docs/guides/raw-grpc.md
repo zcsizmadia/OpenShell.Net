@@ -11,8 +11,9 @@ The curated client calls every user-facing RPC of the `OpenShell` service. For a
 | --- | --- |
 | <xref:OpenShell.OpenShellClient.Raw?displayProperty=nameWithType> | `Openshell.V1.OpenShell.OpenShellClient`, the `OpenShell` service |
 | <xref:OpenShell.OpenShellClient.RawSandboxUpdates?displayProperty=nameWithType> | `Openshell.V1.SandboxUpdates.SandboxUpdatesClient`, the separate `SandboxUpdates` service |
+| <xref:OpenShell.OpenShellClient.RawServiceDiscovery?displayProperty=nameWithType> | `Openshell.V1.ServiceDiscovery.ServiceDiscoveryClient`, the separate `ServiceDiscovery` service (new in v0.1.9) |
 
-Both share the connection, authentication, retries, and telemetry of the curated client. They are on the concrete `OpenShellClient`, not on the `IOpenShellClient` interface, so the fake does not offer them.
+All three share the connection, authentication, retries, and telemetry of the curated client. They are on the concrete `OpenShellClient`, not on the `IOpenShellClient` interface, so the fake does not offer them.
 
 [!code-csharp[](../snippets/Raw.cs#RawCall)]
 

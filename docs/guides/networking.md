@@ -39,6 +39,16 @@ A service publishes a sandbox port through the gateway under a URL. Declare them
 
 `ExposeServiceOptions.Domain` publishes the service on its own domain. `AuthorizationMode` decides what happens to the caller's `Authorization` header: `Strip` (the default) removes it before forwarding, and `BearerPassthrough` forwards one valid bearer header unchanged. `Sandbox.ServiceUrls` lists the URLs of a sandbox's services.
 
+### Service route discovery
+
+Ingress proxies and controllers can discover the routes that sandbox supervisors installed for a workspace through `client.ServiceDiscovery` (the `openshell.v1.ServiceDiscovery` service, new in OpenShell v0.1.9). `GetSnapshotAsync` reads them once; `WatchAsync` streams a full replacement snapshot first and again whenever the view changes, including lease renewals:
+
+[!code-csharp[](../snippets/Networking.cs#ServiceDiscovery)]
+
+The gateway ends each watch after a bounded lifetime (one minute); `WatchAsync` reopens it, skips a snapshot whose `Revision` it already returned, and reconnects with backoff when the gateway is unavailable. Set `ServiceRouteWatchOptions.Reconnect` to `false` to end at the gateway's bound instead. A route proves installation, not application health, and is valid only until `ExpiresAt`: an error is never an empty snapshot, so while the watch fails, drop cached routes as they expire.
+
+The gateway serves discovery only when its supervisor app listener is enabled and otherwise fails with `Conflict` (`FailedPrecondition`). The caller needs the workspace `user` role, and the gateway rejects all-workspace selectors, so each `InWorkspace` view watches one workspace.
+
 ## Multi-replica gateways
 
 Forwards and SSH tunnels are routed to the replica that holds the sandbox's supervisor session. See [Multi-replica gateways](multi-replica.md).

@@ -39,7 +39,7 @@ Waits use the same clock: a `WaitReadyAsync` with a `FakeTimeProvider` completes
 
 [!code-csharp[](../snippets/Testing.cs#Failures)]
 
-Other switches in <xref:OpenShell.Testing.FakeGatewayOptions>: `SupportsSuspendResume` and `SandboxUpdatesEnabled` (to test the `Conflict` paths), `AutoCreateWorkspaces`, `DefaultPageSize`, `RootfsMaxBytes`, `GatewayVersion`, and `BuiltinProfiles`.
+Other switches in <xref:OpenShell.Testing.FakeGatewayOptions>: `SupportsSuspendResume`, `SandboxUpdatesEnabled`, and `ServiceDiscoveryEnabled` (to test the `Conflict` paths), `AutoCreateWorkspaces`, `DefaultPageSize`, `RootfsMaxBytes`, `GatewayVersion`, and `BuiltinProfiles`.
 
 ## Logs, events, and watches
 
